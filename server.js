@@ -1,20 +1,13 @@
-
 const express = require('express');
 const app = express();
-const port = 3000;
-
-// Middleware to parse JSON and serve static files
-app.use(express.json());
-app.use(express.static('public')); // Serve static files (if needed for assets)
-
-// Set EJS as the view engine, but we'll define the template inline
+const port = process.env.PORT || 3000;
 const ejs = require('ejs');
 
-// In-memory storage for forms
+app.use(express.json());
+
 const forms = {};
 let idCounter = 0;
 
-// Template definitions (same as in the editor)
 const templates = {
   "sign-in": {
     name: "Sign In Form",
@@ -52,7 +45,6 @@ const templates = {
   }
 };
 
-// EJS template string (adapted from the provided HTML, simplified for live form)
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -271,7 +263,7 @@ const formTemplate = `
         <% if (char === ' ') { %>
           <span class="space">&nbsp;</span>
         <% } else { %>
-          <span style="color: <%= state.headerColors[index] || '' %>;"><%= char %></span>
+          <span style="color: <%= state.headerColors && state.headerColors[index] ? state.headerColors[index] : '' %>;"><%= char %></span>
         <% } %>
       <% }); %>
     </h2>
@@ -309,7 +301,7 @@ const formTemplate = `
     function normalizeUrl(url) {
       if (!url) return null;
       if (url.match(/^https?:\/\//)) return url;
-      if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
+      if (url.match(/\.[a-z]{2,}$/i)) return "https://" + url;
       return null;
     }
 
@@ -372,15 +364,13 @@ const formTemplate = `
 </html>
 `;
 
-// Endpoint to create a new form
 app.post('/create', (req, res) => {
   const state = req.body;
   const id = idCounter++;
   forms[id] = state;
-  res.json({ url: `http://localhost:${port}/form/${id}` });
+  res.json({ url: `https://${process.env.RENDER_EXTERNAL_HOSTNAME || `localhost:${port}`}/form/${id}` });
 });
 
-// Endpoint to render a form by ID
 app.get('/form/:id', async (req, res) => {
   const state = forms[req.params.id];
   if (!state) {
@@ -390,11 +380,11 @@ app.get('/form/:id', async (req, res) => {
     const html = await ejs.render(formTemplate, { state, templates });
     res.send(html);
   } catch (error) {
+    console.error('Error rendering form:', error);
     res.status(500).send('Error rendering form');
   }
 });
 
-// Start the server
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });
