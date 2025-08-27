@@ -1,8 +1,10 @@
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 3000;
 const ejs = require('ejs');
 
+app.use(cors()); // Enable CORS for front-end requests
 app.use(express.json());
 
 const forms = {};
@@ -154,7 +156,7 @@ const formTemplate = `
       padding: 16px;
     }
     .login-container button:hover {
-      background: <%= state.buttonColor === '#FFFFFF' ? '#e0e0e0' : 'linear-gradient(45deg, #0078ff, #005eff)' %>;
+      background: <%= state.buttonColor === '#FFFFFF' ? '#e0e0e0' : (state.buttonColor || 'linear-gradient(45deg, #0078ff, #005eff)') %>;
       transform: translateY(-1px);
       box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
     }
