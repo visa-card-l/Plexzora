@@ -2,9 +2,9 @@
   "name": "form-backend",
   "version": "1.0.0",
   "description": "Backend to serve a customizable form reflecting editor settings",
-  "main": "app.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node app.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "ejs": "^3.1.10",
