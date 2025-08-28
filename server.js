@@ -138,12 +138,9 @@ const formTemplate = `
       color: <%= state.theme === 'dark' ? '#ffffff' : '#999999' %>;
       opacity: 1;
     }
-    .login-container input:focus {
+    .login-container input:focus, .login-container input:not(:placeholder-shown) {
       outline: none;
-      box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.2);
-      background: <%= state.theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
-    }
-    .login-container input:not(:placeholder-shown) {
+      box-shadow: <%= state.borderShadow || (state.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000') %>;
       background: <%= state.theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
     .login-container button {
@@ -300,30 +297,41 @@ const formTemplate = `
     const messagePopupClose = document.getElementById('message-popup-close');
     const messageText = document.getElementById('message-text');
 
-    console.log('State:', state); // Debug state
+    console.log('Live Form State:', state);
 
     function normalizeUrl(url) {
-      if (!url) return null;
-      if (url.match(/^https?:\/\//)) return url;
-      if (url.match(/\.[a-z]{2,}$/i)) return "https://" + url;
+      if (!url) {
+        console.log('No URL provided');
+        return null;
+      }
+      if (url.match(/^https?:\/\//)) {
+        console.log('URL already has protocol:', url);
+        return url;
+      }
+      if (url.match(/\.[a-z]{2,}$/i)) {
+        console.log('Adding https:// to URL:', url);
+        return "https://" + url;
+      }
+      console.log('Invalid URL:', url);
       return null;
     }
 
     function showMessagePopup(message) {
-      console.log('Showing popup with message:', message); // Debug popup
+      console.log('Showing popup with message:', message);
       messageText.textContent = message || 'Welcome! You have clicked the button.';
       messagePopup.classList.add('show');
       messageOverlay.classList.add('show');
     }
 
     function hideMessagePopup() {
+      console.log('Hiding popup');
       messagePopup.classList.remove('show');
       messageOverlay.classList.remove('show');
     }
 
     function checkFormFilled() {
       const inputs = inputFieldsContainer.querySelectorAll('input');
-      const templateFields = templates[state.template].fields;
+      const templateFields = templates[state.template]?.fields || [];
 
       for (let i = 0; i < inputs.length; i++) {
         const input = inputs[i];
@@ -336,31 +344,34 @@ const formTemplate = `
           return false;
         }
 
-        if (templateField && templateField.validation && templateField.validation.regex) {
-          if (!templateField.validation.regex.test(value)) {
-            showMessagePopup(templateField.validation.errorMessage);
-            return false;
-          }
+        if (templateField?.validation?.regex && !templateField.validation.regex.test(value)) {
+          showMessagePopup(templateField.validation.errorMessage);
+          return false;
         }
       }
       return true;
     }
 
     loginButton.addEventListener('click', () => {
-      console.log('Button clicked, action:', state.buttonAction, 'URL:', state.buttonUrl, 'Message:', state.buttonMessage); // Debug button
+      console.log('Button clicked, action:', state.buttonAction, 'URL:', state.buttonUrl, 'Message:', state.buttonMessage);
       if (!checkFormFilled()) {
+        console.log('Form validation failed');
         return;
       }
-      if (state.buttonAction === 'url') {
+      const action = state.buttonAction || 'message';
+      if (action === 'url') {
         const normalizedUrl = normalizeUrl(state.buttonUrl);
         if (normalizedUrl) {
-          console.log('Redirecting to:', normalizedUrl); // Debug redirect
+          console.log('Redirecting to:', normalizedUrl);
           window.location.href = normalizedUrl;
         } else {
           showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
         }
-      } else if (state.buttonAction === 'message') {
-        showMessagePopup(state.buttonMessage);
+      } else if (action === 'message') {
+        showMessagePopup(state.buttonMessage || 'Default message');
+      } else {
+        console.log('Invalid button action:', action);
+        showMessagePopup('Invalid button action configured.');
       }
     });
 
@@ -373,15 +384,22 @@ const formTemplate = `
 
 app.post('/create', (req, res) => {
   const state = req.body;
-  console.log('Received state:', state); // Debug incoming state
+  console.log('Received state:', state);
+  if (!state || !state.template || !state.placeholders) {
+    console.error('Invalid state received:', state);
+    return res.status(400).send('Invalid form state');
+  }
   const id = idCounter++;
   forms[id] = state;
-  res.json({ url: `https://${process.env.RENDER_EXTERNAL_HOSTNAME || `localhost:${port}`}/form/${id}` });
+  const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || `localhost:${port}`}/form/${id}`;
+  console.log('Generated URL:', url);
+  res.json({ url });
 });
 
 app.get('/form/:id', async (req, res) => {
   const state = forms[req.params.id];
   if (!state) {
+    console.error('Form not found for ID:', req.params.id);
     return res.status(404).send('Form not found');
   }
   try {
