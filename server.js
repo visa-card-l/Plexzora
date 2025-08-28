@@ -4,7 +4,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const ejs = require('ejs');
 
-app.use(cors()); // Enable CORS for front-end requests
+app.use(cors());
 app.use(express.json());
 
 const forms = {};
@@ -300,6 +300,8 @@ const formTemplate = `
     const messagePopupClose = document.getElementById('message-popup-close');
     const messageText = document.getElementById('message-text');
 
+    console.log('State:', state); // Debug state
+
     function normalizeUrl(url) {
       if (!url) return null;
       if (url.match(/^https?:\/\//)) return url;
@@ -308,6 +310,7 @@ const formTemplate = `
     }
 
     function showMessagePopup(message) {
+      console.log('Showing popup with message:', message); // Debug popup
       messageText.textContent = message || 'Welcome! You have clicked the button.';
       messagePopup.classList.add('show');
       messageOverlay.classList.add('show');
@@ -344,12 +347,14 @@ const formTemplate = `
     }
 
     loginButton.addEventListener('click', () => {
+      console.log('Button clicked, action:', state.buttonAction, 'URL:', state.buttonUrl, 'Message:', state.buttonMessage); // Debug button
       if (!checkFormFilled()) {
         return;
       }
       if (state.buttonAction === 'url') {
         const normalizedUrl = normalizeUrl(state.buttonUrl);
         if (normalizedUrl) {
+          console.log('Redirecting to:', normalizedUrl); // Debug redirect
           window.location.href = normalizedUrl;
         } else {
           showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
@@ -368,6 +373,7 @@ const formTemplate = `
 
 app.post('/create', (req, res) => {
   const state = req.body;
+  console.log('Received state:', state); // Debug incoming state
   const id = idCounter++;
   forms[id] = state;
   res.json({ url: `https://${process.env.RENDER_EXTERNAL_HOSTNAME || `localhost:${port}`}/form/${id}` });
