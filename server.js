@@ -1062,7 +1062,7 @@ app.get('/form:id', (req, res) => {
       const fieldInfo = templateFields.find(f => f.id === field.id) || templateFields[index] || { type: 'text', validation: { required: true }, placeholder: templateFields[index]?.placeholder || 'Enter text' };
       const newInput = document.createElement('input');
       newInput.type = fieldInfo.type;
-      newInput.id = `login-${field.id}`;
+      newInput.id = "login-" + field.id;
       newInput.placeholder = field.placeholder || fieldInfo.placeholder;
       newInput.style.boxShadow = state.borderShadow || '';
       inputFieldsContainer.appendChild(newInput);
@@ -1070,7 +1070,7 @@ app.get('/form:id', (req, res) => {
         minHeight += 40;
       }
     });
-    document.querySelector('.login-container').style.minHeight = `${minHeight}px`;
+    document.querySelector('.login-container').style.minHeight = minHeight + 'px';
 
     loginButton.textContent = state.buttonText || templates[state.template].buttonText;
     loginButton.style.background = state.buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)';
