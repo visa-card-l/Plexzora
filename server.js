@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bodyParser = require('body-parser');
 
@@ -1012,7 +1011,7 @@ app.get('/form:id', (req, res) => {
     function normalizeUrl(url) {
       if (!url) return null;
       if (url.match(/^https?:\\/\\//)) return url;
-      if (url.match(/\\.[a-z]{2,}$/i)) return `https://${url}`;
+      if (url.match(/\\.[a-z]{2,}$/i)) return "https://" + url;
       return null;
     }
 
