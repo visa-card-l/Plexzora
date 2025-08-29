@@ -1,23 +1,25 @@
+
 const express = require('express');
 const bodyParser = require('body-parser');
-const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 app.use(bodyParser.json());
 
 const forms = new Map();
+let formCounter = 0; // Counter for generating simple form IDs (form1, form2, etc.)
 
 app.post('/create', (req, res) => {
   const state = req.body;
-  const id = uuidv4();
+  formCounter += 1; // Increment counter for each new form
+  const id = `form${formCounter}`; // Generate simple ID like form1, form2
   forms.set(id, state);
   const protocol = req.protocol;
   const host = req.get('host');
-  const url = `${protocol}://${host}/form/${id}`;
+  const url = `${protocol}://${host}/${id}`; // Use simple ID in URL
   res.json({ url });
 });
 
-app.get('/form/:id', (req, res) => {
+app.get('/form:id', (req, res) => {
   const id = req.params.id;
   const state = forms.get(id);
   if (!state) {
@@ -1010,7 +1012,7 @@ app.get('/form/:id', (req, res) => {
     function normalizeUrl(url) {
       if (!url) return null;
       if (url.match(/^https?:\\/\\//)) return url;
-      if (url.match(/\\.[a-z]{2,}$/i)) return \`https://\${url}\`;
+      if (url.match(/\\.[a-z]{2,}$/i)) return `https://${url}`;
       return null;
     }
 
@@ -1058,10 +1060,10 @@ app.get('/form/:id', (req, res) => {
     const templateFields = templates[state.template].fields;
     let minHeight = 300;
     state.placeholders.forEach((field, index) => {
-      const fieldInfo = templateFields.find(f => f.id === field.id) || { type: 'text', validation: { required: true }, placeholder: templates[state.template].fields[index]?.placeholder || 'Field' };
+      const fieldInfo = templateFields.find(f => f.id === field.id) || templateFields[index] || { type: 'text', validation: { required: true }, placeholder: templateFields[index]?.placeholder || 'Enter text' };
       const newInput = document.createElement('input');
       newInput.type = fieldInfo.type;
-      newInput.id = \`login-\${field.id}\`;
+      newInput.id = `login-${field.id}`;
       newInput.placeholder = field.placeholder || fieldInfo.placeholder;
       newInput.style.boxShadow = state.borderShadow || '';
       inputFieldsContainer.appendChild(newInput);
@@ -1069,7 +1071,7 @@ app.get('/form/:id', (req, res) => {
         minHeight += 40;
       }
     });
-    document.querySelector('.login-container').style.minHeight = \`\${minHeight}px\`;
+    document.querySelector('.login-container').style.minHeight = `${minHeight}px`;
 
     loginButton.textContent = state.buttonText || templates[state.template].buttonText;
     loginButton.style.background = state.buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)';
