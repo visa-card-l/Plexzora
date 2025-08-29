@@ -1,19 +1,19 @@
 {
-  "name": "form-server",
+  "name": "form-builder",
   "version": "1.0.0",
-  "description": "Backend server for serving custom forms with precise frontend mirroring",
-  "main": "server.js",
+  "description": "A simple form builder with short URLs and dynamic placeholders",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "engines": {
-    "node": ">=18.x"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
-    "express": "^4.17.1",
-    "body-parser": "^1.19.0",
-    "uuid": "^8.3.2"
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "shortid": "^2.2.16"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   },
   "author": "",
   "license": "ISC"
