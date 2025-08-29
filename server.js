@@ -657,7 +657,7 @@ app.get('/form/:id', (req, res) => {
     }
 
     body.saved-mode .close-button {
-      display: none; /* Hide close button for live form */
+      display: none;
     }
 
     .close-button:hover {
@@ -1058,7 +1058,7 @@ app.get('/form/:id', (req, res) => {
     const templateFields = templates[state.template].fields;
     let minHeight = 300;
     state.placeholders.forEach((field, index) => {
-      const fieldInfo = templateFields.find(f => f.id === field.id) || { type: 'text', validation: { required: true }, placeholder: field.placeholder || \`Field \${index + 1}\` };
+      const fieldInfo = templateFields.find(f => f.id === field.id) || { type: 'text', validation: { required: true }, placeholder: templates[state.template].fields[index]?.placeholder || 'Field' };
       const newInput = document.createElement('input');
       newInput.type = fieldInfo.type;
       newInput.id = \`login-\${field.id}\`;
