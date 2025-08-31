@@ -5,11 +5,10 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Use Render's port or default to 10000
 
 // Middleware
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
@@ -119,7 +118,7 @@ const formEjsTemplate = `
       font-weight: 500;
       box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3);
       padding: 16px;
-      touch-ation: manipulation;
+      touch-action: manipulation;
     }
 
     .login-container button:hover {
@@ -340,7 +339,7 @@ const formEjsTemplate = `
       "sign-in": {
         name: "Sign In Form",
         fields: [
-          { id: "email", placeholder: "Email", type: "email", validation: { required: true, regex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, errorMessage: "Please enter a valid email address." } },
+          { id: "email", placeholder: "Email", type: "email", validation: { required: true, regex: /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/, errorMessage: "Please enter a valid email address." } },
           { id: "password", placeholder: "Password", type: "password", validation: { required: true } }
         ],
         buttonText: "Sign In",
@@ -352,7 +351,7 @@ const formEjsTemplate = `
         name: "Contact Form",
         fields: [
           { id: "phone", placeholder: "Phone Number", type: "tel", validation: { required: true } },
-          { id: "email", placeholder: "Email", type: "email", validation: { required: true, regex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, errorMessage: "Please enter a valid email address." } }
+          { id: "email", placeholder: "Email", type: "email", validation: { required: true, regex: /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/, errorMessage: "Please enter a valid email address." } }
         ],
         buttonText: "Submit",
         buttonAction: "message",
@@ -362,7 +361,7 @@ const formEjsTemplate = `
       "payment-checkout": {
         name: "Payment Checkout Form",
         fields: [
-          { id: "card-number", placeholder: "Card Number", type: "text", validation: { required: true, regex: /^\d{4}\s?\d{4}\s?\d{4}\s?\d{4}$/, errorMessage: "Please enter a valid 16-digit card number." } },
+          { id: "card-number", placeholder: "Card Number", type: "text", validation: { required: true, regex: /^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$/, errorMessage: "Please enter a valid 16-digit card number." } },
           { id: "exp-date", placeholder: "Expiration Date (MM/YY)", type: "text", validation: { required: true } },
           { id: "cvv", placeholder: "CVV", type: "text", validation: { required: true } }
         ],
@@ -452,37 +451,58 @@ const formEjsTemplate = `
 `;
 
 // Write EJS template to views/form.ejs on server start
-const viewsDir = path.join(__dirname, 'views');
-if (!fs.existsSync(viewsDir)) {
-  fs.mkdirSync(viewsDir);
+try {
+  const viewsDir = path.join(__dirname, 'views');
+  if (!fs.existsSync(viewsDir)) {
+    fs.mkdirSync(viewsDir);
+  }
+  fs.writeFileSync(path.join(viewsDir, 'form.ejs'), formEjsTemplate);
+} catch (err) {
+  console.error('Error writing EJS template:', err);
+  process.exit(1);
 }
-fs.writeFileSync(path.join(viewsDir, 'form.ejs'), formEjsTemplate);
-
-// Serve the frontend HTML (editor)
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 // Create a new form with a short URL
 app.post('/create', (req, res) => {
-  const state = req.body;
-  const id = nanoid(); // Generate a 6-character unique ID
-  formStates.set(id, state);
-  const url = `${req.protocol}://${req.get('host')}/form/${id}`;
-  res.json({ url });
+  try {
+    const state = req.body;
+    if (!state || !state.template) {
+      return res.status(400).json({ error: 'Invalid form state' });
+    }
+    const id = nanoid(); // Generate a 6-character unique ID
+    formStates.set(id, state);
+    const url = `${req.protocol}://${req.get('host')}/form/${id}`;
+    res.json({ url });
+  } catch (err) {
+    console.error('Error creating form:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Serve a form by its ID using EJS
 app.get('/form/:id', (req, res) => {
-  const id = req.params.id;
-  const state = formStates.get(id);
-
-  if (!state) {
-    return res.status(404).send('Form not found');
+  try {
+    const id = req.params.id;
+    const state = formStates.get(id);
+    if (!state) {
+      return res.status(404).send('Form not found');
+    }
+    res.render('form', { state });
+  } catch (err) {
+    console.error('Error rendering form:', err);
+    res.status(500).send('Internal server error');
   }
+});
 
-  // Render the EJS template with the form state
-  res.render('form', { state });
+// Handle root route (optional, since frontend is separate)
+app.get('/', (req, res) => {
+  res.status(200).send('Backend for live forms is running. Use the frontend editor to create forms.');
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unexpected error:', err);
+  res.status(500).send('Internal server error');
 });
 
 // Start the server
