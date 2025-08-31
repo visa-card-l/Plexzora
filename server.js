@@ -44,7 +44,11 @@ app.post('/create', (req, res) => {
       theme: req.body.theme || 'light'
     };
     formConfigs[formId] = config;
-    const url = `http://localhost:${port}/form/${formId}`;
+
+    // Dynamically determine the base URL based on the environment
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const host = process.env.HOST || req.headers.host || `localhost:${port}`;
+    const url = `${protocol}://${host}/form/${formId}`;
     res.json({ url });
   } catch (error) {
     console.error('Error saving form configuration:', error);
@@ -498,5 +502,5 @@ app.get('/form/:id', (req, res) => {
 
 // Start the server
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });
