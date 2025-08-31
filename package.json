@@ -1,7 +1,7 @@
 {
   "name": "form-backend",
   "version": "1.0.0",
-  "description": "Backend for a customizable form application with EJS templating",
+  "description": "Backend for serving live forms with EJS templating",
   "main": "serve.js",
   "scripts": {
     "start": "node serve.js",
