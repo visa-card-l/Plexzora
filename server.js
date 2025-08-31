@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const { customAlphabet } = require('nanoid');
@@ -120,7 +119,7 @@ const formEjsTemplate = `
       font-weight: 500;
       box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3);
       padding: 16px;
-      touch-action: manipulation;
+      touch-ation: manipulation;
     }
 
     .login-container button:hover {
@@ -383,8 +382,8 @@ const formEjsTemplate = `
 
     function normalizeUrl(url) {
       if (!url) return null;
-      if (url.match(/^https?:\/\//)) return url;
-      if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
+      if (url.match(/^https?:\\/\\//)) return url;
+      if (url.match(/\\.[a-z]{2,}$/i)) return 'https://' + url;
       return null;
     }
 
@@ -437,8 +436,7 @@ const formEjsTemplate = `
           showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
         }
       } else if (action === 'message') {
-        showMessagePopup('<%= state.buttonMessage %>
-        });
+        showMessagePopup('<%= state.buttonMessage %>');
       }
     });
 
