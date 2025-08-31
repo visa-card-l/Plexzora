@@ -5,10 +5,10 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 10000; // Use Render's port or default to 10000
+const PORT = process.env.PORT || 10000; // Render-compatible port
 
 // Middleware
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '10mb' })); // Handle large JSON payloads
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
@@ -23,12 +23,12 @@ const formEjsTemplate = `
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><%= state.template ? templates[state.template].name : 'Custom Form' %></title>
+  <title><%= state && state.template && templates[state.template] ? templates[state.template].name : 'Custom Form' %></title>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     body {
       font-family: 'Roboto', sans-serif;
-      background: <%= state.theme === 'dark' ? '#000000' : '#f8f9fa' %>;
+      background: <%= state && state.theme === 'dark' ? '#000000' : '#f8f9fa' %>;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -42,10 +42,10 @@ const formEjsTemplate = `
     }
 
     .login-container {
-      background: <%= state.theme === 'dark' ? '#2f3b5a' : 'white' %>;
+      background: <%= state && state.theme === 'dark' ? '#2f3b5a' : 'white' %>;
       padding: 20px;
       border-radius: 16px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, <%= state.theme === 'dark' ? '0.3' : '0.1' %>);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, <%= state && state.theme === 'dark' ? '0.3' : '0.1' %>);
       width: 320px;
       min-height: 300px;
       height: auto;
@@ -59,7 +59,7 @@ const formEjsTemplate = `
 
     .login-container:hover {
       transform: scale(1.02);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, <%= state.theme === 'dark' ? '0.4' : '0.15' %>);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, <%= state && state.theme === 'dark' ? '0.4' : '0.15' %>);
     }
 
     .login-container h2 {
@@ -68,13 +68,13 @@ const formEjsTemplate = `
       display: block;
       visibility: visible;
       opacity: 1;
-      color: <%= state.theme === 'dark' ? '#ffffff' : '#000000' %>;
+      color: <%= state && state.theme === 'dark' ? '#ffffff' : '#000000' %>;
     }
 
     .login-container p {
       font-family: 'Roboto', sans-serif;
       font-size: 0.9rem;
-      color: <%= state.theme === 'dark' ? '#ffffff' : '#555555' %>;
+      color: <%= state && state.theme === 'dark' ? '#ffffff' : '#555555' %>;
       font-weight: 400;
       display: block;
       visibility: visible;
@@ -95,24 +95,24 @@ const formEjsTemplate = `
 
     .login-container input {
       border: none;
-      box-shadow: <%= state.borderShadow || (state.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000') %>;
-      background: <%= state.theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
+      box-shadow: <%= state && state.borderShadow ? state.borderShadow : (state && state.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000') %>;
+      background: <%= state && state.theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
     }
 
     .login-container input::placeholder {
-      color: <%= state.theme === 'dark' ? '#ffffff' : '#999999' %>;
+      color: <%= state && state.theme === 'dark' ? '#ffffff' : '#999999' %>;
       opacity: 1;
     }
 
     .login-container input:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.2);
-      background: <%= state.theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
+      background: <%= state && state.theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
 
     .login-container button {
-      background: <%= state.buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)' %>;
-      color: <%= state.buttonTextColor || (state.buttonColor === '#FFFFFF' ? '#000000' : '#ffffff') %>;
+      background: <%= state && state.buttonColor ? state.buttonColor : 'linear-gradient(45deg, #00b7ff, #0078ff)' %>;
+      color: <%= state && state.buttonTextColor ? state.buttonTextColor : (state && state.buttonColor === '#FFFFFF' ? '#000000' : '#ffffff') %>;
       border: none;
       cursor: pointer;
       font-weight: 500;
@@ -122,7 +122,7 @@ const formEjsTemplate = `
     }
 
     .login-container button:hover {
-      background: <%= state.buttonColor ? state.buttonColor : 'linear-gradient(45deg, #0078ff, #005eff)' %>;
+      background: <%= state && state.buttonColor ? state.buttonColor : 'linear-gradient(45deg, #0078ff, #005eff)' %>;
       transform: translateY(-1px);
       box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
     }
@@ -138,7 +138,7 @@ const formEjsTemplate = `
       border: none;
       font-size: 1.4rem;
       font-weight: bold;
-      color: <%= state.theme === 'dark' ? '#f8f9fa' : '#555555' %>;
+      color: <%= state && state.theme === 'dark' ? '#f8f9fa' : '#555555' %>;
       cursor: pointer;
       transition: color 0.2s ease;
       z-index: 1000;
@@ -155,10 +155,10 @@ const formEjsTemplate = `
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: <%= state.theme === 'dark' ? '#2f3b5a' : '#ffffff' %>;
+      background: <%= state && state.theme === 'dark' ? '#2f3b5a' : '#ffffff' %>;
       padding: 16px;
       border-radius: 12px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, <%= state.theme === 'dark' ? '0.4' : '0.15' %>);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, <%= state && state.theme === 'dark' ? '0.4' : '0.15' %>);
       z-index: 1000;
       text-align: center;
       max-width: 240px;
@@ -171,13 +171,13 @@ const formEjsTemplate = `
     .popup h4 {
       font-size: 0.85rem;
       font-weight: 600;
-      color: <%= state.theme === 'dark' ? '#f8f9fa' : '#333333' %>;
+      color: <%= state && state.theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       margin-bottom: 8px;
     }
 
     .popup p {
       font-size: 0.75rem;
-      color: <%= state.theme === 'dark' ? '#d1d5db' : '#555555' %>;
+      color: <%= state && state.theme === 'dark' ? '#d1d5db' : '#555555' %>;
       margin-bottom: 8px;
       line-height: 1.4;
     }
@@ -260,7 +260,7 @@ const formEjsTemplate = `
   <div class="login-container">
     <h2 id="login-header">
       <% 
-        const headerText = state.headerText || 'my form';
+        const headerText = state && state.headerText ? state.headerText : 'my form';
         let colorIndex = 0;
         for (let i = 0; i < headerText.length; i++) {
           if (headerText[i] === ' ') {
@@ -268,7 +268,7 @@ const formEjsTemplate = `
         <span class="space"> </span>
       <% 
           } else {
-            const color = state.headerColors && state.headerColors[colorIndex] ? state.headerColors[colorIndex] : '';
+            const color = state && state.headerColors && state.headerColors[colorIndex] ? state.headerColors[colorIndex] : '';
             colorIndex++;
       %>
         <span style="color: <%= color %>;"><%= headerText[i] %></span>
@@ -277,13 +277,13 @@ const formEjsTemplate = `
         }
       %>
     </h2>
-    <p id="login-subheader" style="color: <%= state.subheaderColor || (state.theme === 'dark' ? '#ffffff' : '#555555') %>;">
-      <%= state.subheaderText || 'fill the form' %>
+    <p id="login-subheader" style="color: <%= state && state.subheaderColor ? state.subheaderColor : (state && state.theme === 'dark' ? '#ffffff' : '#555555') %>;">
+      <%= state && state.subheaderText ? state.subheaderText : 'fill the form' %>
     </p>
     <div id="input-fields">
       <% 
-        const templateFields = templates[state.template]?.fields || [];
-        const placeholders = state.placeholders || [];
+        const templateFields = state && state.template && templates[state.template] ? templates[state.template].fields : [];
+        const placeholders = state && state.placeholders ? state.placeholders : [];
         const allFields = [];
         
         // Merge template fields with custom placeholders
@@ -312,8 +312,8 @@ const formEjsTemplate = `
         <input 
           type="<%= field.type %>" 
           id="login-<%= field.id %>" 
-          placeholder="<%= field.placeholder %>"
-          style="box-shadow: <%= state.borderShadow || (state.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000') %>;"
+          placeholder="<%= field.placeholder ? field.placeholder : 'Enter text' %>"
+          style="box-shadow: <%= state && state.borderShadow ? state.borderShadow : (state && state.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000') %>;"
         >
       <% 
         });
@@ -321,9 +321,9 @@ const formEjsTemplate = `
     </div>
     <button 
       id="login-button" 
-      style="background: <%= state.buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)' %>; color: <%= state.buttonTextColor || (state.buttonColor === '#FFFFFF' ? '#000000' : '#ffffff') %>;"
+      style="background: <%= state && state.buttonColor ? state.buttonColor : 'linear-gradient(45deg, #00b7ff, #0078ff)' %>; color: <%= state && state.buttonTextColor ? state.buttonTextColor : (state && state.buttonColor === '#FFFFFF' ? '#000000' : '#ffffff') %>;"
     >
-      <%= state.buttonText || templates[state.template]?.buttonText || 'Submit' %>
+      <%= state && state.buttonText ? state.buttonText : (state && state.template && templates[state.template] ? templates[state.template].buttonText : 'Submit') %>
     </button>
   </div>
   <button class="close-button" id="close-button">&times;</button>
@@ -340,6 +340,7 @@ const formEjsTemplate = `
         name: "Sign In Form",
         fields: [
           { id: "email", placeholder: "Email", type: "email", validation: { required: true, regex: /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/, errorMessage: "Please enter a valid email address." } },
+         indent: 1
           { id: "password", placeholder: "Password", type: "password", validation: { required: true } }
         ],
         buttonText: "Sign In",
@@ -399,7 +400,7 @@ const formEjsTemplate = `
 
     function checkFormFilled() {
       const inputs = document.getElementById('input-fields').querySelectorAll('input');
-      const templateFields = templates['<%= state.template %>']?.fields || [];
+      const templateFields = templates['<%= state && state.template ? state.template : "" %>']?.fields || [];
 
       for (let i = 0; i < inputs.length; i++) {
         const input = inputs[i];
@@ -426,16 +427,16 @@ const formEjsTemplate = `
       if (!checkFormFilled()) {
         return;
       }
-      const action = '<%= state.buttonAction %>';
+      const action = '<%= state && state.buttonAction ? state.buttonAction : "message" %>';
       if (action === 'url') {
-        const normalizedUrl = normalizeUrl('<%= state.buttonUrl %>');
+        const normalizedUrl = normalizeUrl('<%= state && state.buttonUrl ? state.buttonUrl : "" %>');
         if (normalizedUrl) {
           window.location.href = normalizedUrl;
         } else {
           showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
         }
       } else if (action === 'message') {
-        showMessagePopup('<%= state.buttonMessage %>');
+        showMessagePopup('<%= state && state.buttonMessage ? state.buttonMessage : "Action completed!" %>');
       }
     });
 
@@ -454,11 +455,13 @@ const formEjsTemplate = `
 try {
   const viewsDir = path.join(__dirname, 'views');
   if (!fs.existsSync(viewsDir)) {
-    fs.mkdirSync(viewsDir);
+    console.log('Creating views directory...');
+    fs.mkdirSync(viewsDir, { recursive: true });
   }
   fs.writeFileSync(path.join(viewsDir, 'form.ejs'), formEjsTemplate);
+  console.log('EJS template written successfully');
 } catch (err) {
-  console.error('Error writing EJS template:', err);
+  console.error('Error writing EJS template:', err.message);
   process.exit(1);
 }
 
@@ -466,15 +469,24 @@ try {
 app.post('/create', (req, res) => {
   try {
     const state = req.body;
-    if (!state || !state.template) {
-      return res.status(400).json({ error: 'Invalid form state' });
+    // Validate state
+    if (!state || typeof state !== 'object' || !state.template) {
+      console.error('Invalid form state received:', state);
+      return res.status(400).json({ error: 'Invalid form state: template is required' });
     }
-    const id = nanoid(); // Generate a 6-character unique ID
+    // Validate template
+    const validTemplates = ['sign-in', 'contact', 'payment-checkout'];
+    if (!validTemplates.includes(state.template)) {
+      console.error('Invalid template:', state.template);
+      return res.status(400).json({ error: 'Invalid template' });
+    }
+    const id = nanoid();
     formStates.set(id, state);
     const url = `${req.protocol}://${req.get('host')}/form/${id}`;
+    console.log(`Form created with ID: ${id}, URL: ${url}`);
     res.json({ url });
   } catch (err) {
-    console.error('Error creating form:', err);
+    console.error('Error in /create:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -483,26 +495,37 @@ app.post('/create', (req, res) => {
 app.get('/form/:id', (req, res) => {
   try {
     const id = req.params.id;
+    if (!id || typeof id !== 'string') {
+      console.error('Invalid form ID:', id);
+      return res.status(400).send('Invalid form ID');
+    }
     const state = formStates.get(id);
     if (!state) {
+      console.error(`Form not found for ID: ${id}`);
       return res.status(404).send('Form not found');
     }
+    // Validate state structure
+    if (!state.template || typeof state !== 'object') {
+      console.error(`Invalid state for ID: ${id}`, state);
+      return res.status(400).send('Invalid form state');
+    }
+    console.log(`Rendering form for ID: ${id}`);
     res.render('form', { state });
   } catch (err) {
-    console.error('Error rendering form:', err);
-    res.status(500).send('Internal server error');
+    console.error(`Error rendering form for ID: ${req.params.id}:`, err.message);
+    res.status(500).send(`Internal server error: ${err.message}`);
   }
 });
 
-// Handle root route (optional, since frontend is separate)
+// Handle root route
 app.get('/', (req, res) => {
   res.status(200).send('Backend for live forms is running. Use the frontend editor to create forms.');
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unexpected error:', err);
-  res.status(500).send('Internal server error');
+  console.error('Unexpected error:', err.message, err.stack);
+  res.status(500).send(`Internal server error: ${err.message}`);
 });
 
 // Start the server
