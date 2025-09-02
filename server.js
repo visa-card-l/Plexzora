@@ -49,7 +49,7 @@ app.get('/form/:id', (req, res) => {
     }
 
     body.dark-mode {
-      background: #000000;
+      background: #1f2a44;
     }
 
     body.saved-mode {
@@ -62,7 +62,7 @@ app.get('/form/:id', (req, res) => {
     }
 
     body.dark-mode.saved-mode {
-      background: #000000;
+      background: #1f2a44;
     }
 
     .form-title {
