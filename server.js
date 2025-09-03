@@ -75,7 +75,7 @@ app.get('/form/:id', (req, res) => {
     'sign-in': {
       name: 'Sign In Form',
       fields: [
-        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$', errorMessage: 'Please enter a valid email address.' } },
         { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
       ],
       buttonText: 'Sign In',
@@ -87,7 +87,7 @@ app.get('/form/:id', (req, res) => {
       name: 'Contact Form',
       fields: [
         { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$', errorMessage: 'Please enter a valid email address.' } }
       ],
       buttonText: 'Submit',
       buttonAction: 'message',
@@ -128,7 +128,7 @@ app.get('/form/:id', (req, res) => {
     }
   });
 
-  // Render the EJS template directly
+  // Render the HTML directly
   res.set('Content-Type', 'text/html');
   res.send(`
     <!DOCTYPE html>
@@ -413,8 +413,9 @@ app.get('/form/:id', (req, res) => {
                     placeholder: '${field.placeholder}',
                     type: '${field.type}',
                     validation: {
-                      required: ${field.validation.required},
-                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: '${field.validation.errorMessage}'` : ''}
+                      required: ${field.validation.required}${field.validation.regex ? `,
+                      regex: new RegExp('${field.validation.regex}'),
+                      errorMessage: '${field.validation.errorMessage}'` : ''}
                     }
                   }
                 `).join(',')}
@@ -438,7 +439,7 @@ app.get('/form/:id', (req, res) => {
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
+          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
           return null;
         }
 
