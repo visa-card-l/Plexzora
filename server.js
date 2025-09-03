@@ -1,6 +1,5 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const { nanoid } = require('nanoid');
 const path = require('path');
 
 const app = express();
@@ -23,11 +22,24 @@ function normalizeUrl(url) {
   return url;
 }
 
+// Utility to generate a short, unique code
+function generateShortCode(length = 6) {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let code = '';
+  for (let i = 0; i < length; i++) {
+    code += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  // Ensure uniqueness
+  if (formConfigs[code]) {
+    return generateShortCode(length); // Recursively try again if code exists
+  }
+  return code;
+}
+
 // Route to save form configuration and generate shareable link
 app.post('/create', (req, res) => {
   try {
-    // Generate a short, unique ID (6 characters, alphanumeric)
-    const formId = nanoid(6);
+    const formId = generateShortCode(); // Use short code instead of UUID
     const config = {
       template: req.body.template || 'sign-in',
       headerText: req.body.headerText || 'my form',
@@ -44,12 +56,6 @@ app.post('/create', (req, res) => {
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme || 'light'
     };
-    
-    // Check for ID collision (unlikely but possible)
-    if (formConfigs[formId]) {
-      return res.status(500).json({ error: 'ID collision occurred. Please try again.' });
-    }
-    
     formConfigs[formId] = config;
 
     // Dynamically determine the base URL based on the environment
@@ -75,7 +81,7 @@ app.get('/form/:id', (req, res) => {
     'sign-in': {
       name: 'Sign In Form',
       fields: [
-        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$', errorMessage: 'Please enter a valid email address.' } },
+        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
         { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
       ],
       buttonText: 'Sign In',
@@ -87,7 +93,7 @@ app.get('/form/:id', (req, res) => {
       name: 'Contact Form',
       fields: [
         { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$', errorMessage: 'Please enter a valid email address.' } }
+        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
       ],
       buttonText: 'Submit',
       buttonAction: 'message',
@@ -128,7 +134,7 @@ app.get('/form/:id', (req, res) => {
     }
   });
 
-  // Render the HTML directly
+  // Render the EJS template directly
   res.set('Content-Type', 'text/html');
   res.send(`
     <!DOCTYPE html>
@@ -264,7 +270,7 @@ app.get('/form/:id', (req, res) => {
           z-index: 1000;
         }
         body.dark-mode .close-button { color: #f8f9fa; }
-        .close-button:hover { color: #DB4437; }
+        .close-button:hover { color: #ff4757; }
         .popup {
           display: none;
           position: fixed;
@@ -413,9 +419,8 @@ app.get('/form/:id', (req, res) => {
                     placeholder: '${field.placeholder}',
                     type: '${field.type}',
                     validation: {
-                      required: ${field.validation.required}${field.validation.regex ? `,
-                      regex: new RegExp('${field.validation.regex}'),
-                      errorMessage: '${field.validation.errorMessage}'` : ''}
+                      required: ${field.validation.required},
+                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: '${field.validation.errorMessage}'` : ''}
                     }
                   }
                 `).join(',')}
@@ -439,7 +444,7 @@ app.get('/form/:id', (req, res) => {
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
+          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
           return null;
         }
 
