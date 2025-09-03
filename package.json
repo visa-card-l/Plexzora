@@ -2,9 +2,9 @@
   "name": "form-creator",
   "version": "1.0.0",
   "description": "A web application for creating and sharing customizable forms",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.17.1",
