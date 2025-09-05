@@ -29,7 +29,6 @@ function generateShortCode(length = 6) {
   for (let i = 0; i < length; i++) {
     code += characters.charAt(Math.floor(Math.random() * characters.length));
   }
-  // Ensure uniqueness
   if (formConfigs[code]) {
     return generateShortCode(length);
   }
@@ -424,92 +423,87 @@ app.get('/:id', (req, res) => {
         <p id="message-text"></p>
       </div>
       <script>
-        const loginButton = document.getElementById("login-button");
-        const messagePopup = document.getElementById("message-popup");
-        const messageOverlay = document.getElementById("message-overlay");
-        const messagePopupClose = document.getElementById("message-popup-close");
-        const messageText = document.getElementById("message-text");
-        const inputFieldsContainer = document.getElementById("input-fields");
+        const loginButton = document.getElementById('login-button');
+        const messagePopup = document.getElementById('message-popup');
+        const messageOverlay = document.getElementById('message-overlay');
+        const messagePopupClose = document.getElementById('message-popup-close');
+        const messageText = document.getElementById('message-text');
+        const inputFieldsContainer = document.getElementById('input-fields');
 
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
+          if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
           return null;
         }
 
         function showMessagePopup(message) {
-          messageText.textContent = message || "Welcome! You have clicked the button.";
-          messagePopup.classList.add("show");
-          messageOverlay.classList.add("show");
+          messageText.textContent = message || 'Welcome! You have clicked the button.';
+          messagePopup.classList.add('show');
+          messageOverlay.classList.add('show');
         }
 
         function hideMessagePopup() {
-          messagePopup.classList.remove("show");
-          messageOverlay.classList.remove("show");
+          messagePopup.classList.remove('show');
+          messageOverlay.classList.remove('show');
         }
 
         function checkFormFilled() {
-          const inputs = inputFieldsContainer.querySelectorAll("input");
+          const inputs = inputFieldsContainer.querySelectorAll('input');
           const templateFields = [
-            ${template.fields
-              .map(
-                field => `
-              {
-                id: "${field.id}",
-                validation: {
-                  required: ${field.validation.required}${
-                  field.validation.regex
-                    ? `,
-                  regex: /${field.validation.regex}/,
-                  errorMessage: "${field.validation.errorMessage}"`
-                    : ''
-                }
-              }
-            `
-              )
+            ${fields
+              .map(field => {
+                const validation = field.validation || {};
+                return `{
+                  id: '${field.id}',
+                  validation: {
+                    required: ${!!validation.required}${validation.regex ? `,
+                    regex: new RegExp('${validation.regex}'),
+                    errorMessage: '${validation.errorMessage || ''}'` : ''}
+                  }
+                }`;
+              })
               .join(',')}
           ];
 
           for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
             const value = input.value.trim();
-            const fieldId = input.id.replace("login-", "");
+            const fieldId = input.id.replace('login-', '');
             const templateField = templateFields.find(field => field.id === fieldId);
 
             if (!value && templateField.validation.required) {
-              showMessagePopup("Please fill all required fields before proceeding.");
+              showMessagePopup('Please fill all required fields before proceeding.');
               return false;
             }
 
-            if (templateField && templateField.validation && templateField.validation.regex) {
-              if (!templateField.validation.regex.test(value)) {
-                showMessagePopup(templateField.validation.errorMessage);
-                return false;
-              }
+            if (templateField && templateField.validation.regex && !templateField.validation.regex.test(value)) {
+              showMessagePopup(templateField.validation.errorMessage);
+              return false;
             }
           }
           return true;
         }
 
-        loginButton.addEventListener("click", () => {
+        loginButton.addEventListener('click', () => {
           if (!checkFormFilled()) return;
-          const action = "${config.buttonAction}";
-          const normalizedUrl = normalizeUrl("${config.buttonUrl}");
-          const message = "${config.buttonMessage}";
-          if (action === "url") {
+          const action = '${config.buttonAction}';
+          const url = '${config.buttonUrl}';
+          const message = '${config.buttonMessage}';
+          if (action === 'url') {
+            const normalizedUrl = normalizeUrl(url);
             if (normalizedUrl) {
               window.location.href = normalizedUrl;
             } else {
-              showMessagePopup("Invalid URL provided.");
+              showMessagePopup('Invalid URL provided.');
             }
-          } else if (action === "message") {
-            showMessagePopup(message || "Welcome! You have clicked the button.");
+          } else if (action === 'message') {
+            showMessagePopup(message || 'Welcome! You have clicked the button.');
           }
         });
 
-        messagePopupClose.addEventListener("click", hideMessagePopup);
-        messageOverlay.addEventListener("click", hideMessagePopup);
+        messagePopupClose.addEventListener('click', hideMessagePopup);
+        messageOverlay.addEventListener('click', hideMessagePopup);
       </script>
     </body>
     </html>
