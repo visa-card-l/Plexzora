@@ -60,7 +60,7 @@ app.post('/create', (req, res) => {
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = process.env.HOST || req.headers.host || `localhost:${port}`;
-    const url = `${protocol}://${host}/form/${formId}`;
+    const url = `${protocol}://${host}/${formId}`; // Removed /form from URL
     res.json({ url });
   } catch (error) {
     console.error('Error saving form configuration:', error);
@@ -69,7 +69,7 @@ app.post('/create', (req, res) => {
 });
 
 // Route to serve the live form
-app.get('/form/:id', (req, res) => {
+app.get('/:id', (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   if (!config) {
@@ -251,24 +251,6 @@ app.get('/form/:id', (req, res) => {
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
         }
-        .close-button {
-          display: block;
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          width: 32px;
-          height: 32px;
-          background: none;
-          border: none;
-          font-size: 1.4rem;
-          font-weight: bold;
-          color: #555555;
-          cursor: pointer;
-          transition: color 0.2s ease;
-          z-index: 1000;
-        }
-        body.dark-mode .close-button { color: #f8f9fa; }
-        .close-button:hover { color: #ff4757; }
         .popup {
           display: none;
           position: fixed;
@@ -347,13 +329,6 @@ app.get('/form/:id', (req, res) => {
             font-size: 0.9rem;
           }
           .login-container button { padding: 14px; }
-          .close-button {
-            top: 12px;
-            right: 12px;
-            width: 32px;
-            height: 32px;
-            font-size: 1.4rem;
-          }
           .popup {
             width: 80%;
             max-width: 240px;
@@ -397,7 +372,6 @@ app.get('/form/:id', (req, res) => {
           style="background: ${config.buttonColor}; color: ${config.buttonTextColor}"
         >${config.buttonText}</button>
       </div>
-      <button class="close-button" id="close-button">&times;</button>
       <div class="overlay" id="message-overlay"></div>
       <div class="popup" id="message-popup">
         <button class="popup-close" id="message-popup-close">&times;</button>
@@ -436,12 +410,11 @@ app.get('/form/:id', (req, res) => {
         const messagePopupClose = document.getElementById("message-popup-close");
         const messageText = document.getElementById("message-text");
         const inputFieldsContainer = document.getElementById("input-fields");
-        const closeButton = document.getElementById("close-button");
 
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
+          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
           return null;
         }
 
@@ -498,9 +471,6 @@ app.get('/form/:id', (req, res) => {
 
         messagePopupClose.addEventListener("click", hideMessagePopup);
         messageOverlay.addEventListener("click", hideMessagePopup);
-        closeButton.addEventListener("click", () => {
-          window.location.href = "/";
-        });
       </script>
     </body>
     </html>
