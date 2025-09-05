@@ -495,15 +495,16 @@ app.get('/:id', (req, res) => {
         loginButton.addEventListener("click", () => {
           if (!checkFormFilled()) return;
           const action = "${config.buttonAction}";
+          const normalizedUrl = normalizeUrl("${config.buttonUrl}");
+          const message = "${config.buttonMessage}";
           if (action === "url") {
-            const normalizedUrl = normalizeUrl("${config.buttonUrl}");
             if (normalizedUrl) {
               window.location.href = normalizedUrl;
             } else {
               showMessagePopup("Invalid URL provided.");
             }
           } else if (action === "message") {
-            showMessagePopup("${config.buttonMessage}");
+            showMessagePopup(message || "Welcome! You have clicked the button.");
           }
         });
 
