@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
 const app = express();
@@ -22,29 +23,10 @@ function normalizeUrl(url) {
   return url;
 }
 
-// Utility to generate a short, unique code
-function generateShortCode(length = 6) {
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let code = '';
-  for (let i = 0; i < length; i++) {
-    code += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  if (formConfigs[code]) {
-    return generateShortCode(length);
-  }
-  return code;
-}
-
-// Utility to sanitize strings for JavaScript interpolation
-function sanitizeForJs(str) {
-  if (!str) return '';
-  return str.replace(/['"`]/g, '\\$&').replace(/\n/g, '\\n');
-}
-
 // Route to save form configuration and generate shareable link
 app.post('/create', (req, res) => {
   try {
-    const formId = generateShortCode();
+    const formId = uuidv4();
     const config = {
       template: req.body.template || 'sign-in',
       headerText: req.body.headerText || 'my form',
@@ -385,10 +367,10 @@ app.get('/form/:id', (req, res) => {
           config.headerText.split('').map((char, i) => {
             if (char === ' ') return '<span class="space"> </span>';
             const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
-            return `<span style="color: ${color}">${char}</span>`;
+            return `<span style="color: ${color};">${char}</span>`;
           }).join('')
         }</h2>
-        <p id="login-subheader" style="color: ${config.subheaderColor}">${config.subheaderText}</p>
+        <p id="login-subheader" style="color: ${config.subheaderColor};">${config.subheaderText}</p>
         <div id="input-fields">
           ${fields.map(field => `
             <input 
@@ -489,33 +471,29 @@ app.get('/form/:id', (req, res) => {
           return true;
         }
 
-        try {
-          loginButton.addEventListener('click', () => {
-            if (!checkFormFilled()) {
-              return;
+        loginButton.addEventListener('click', () => {
+          if (!checkFormFilled()) {
+            return;
+          }
+          const action = '${config.buttonAction}';
+          if (action === 'url') {
+            const normalizedUrl = normalizeUrl('${config.buttonUrl}');
+            if (normalizedUrl) {
+              window.location.href = normalizedUrl;
+            } else {
+              showMessagePopup('Invalid URL provided.');
             }
-            const action = '${sanitizeForJs(config.buttonAction)}';
-            if (action === 'url') {
-              const normalizedUrl = normalizeUrl('${sanitizeForJs(config.buttonUrl)}');
-              if (normalizedUrl) {
-                window.location.href = normalizedUrl;
-              } else {
-                showMessagePopup('Invalid URL provided.');
-              }
-            } else if (action === 'message') {
-              showMessagePopup('${sanitizeForJs(config.buttonMessage)}');
-            }
-          });
+          } else if (action === 'message') {
+            showMessagePopup('${config.buttonMessage}');
+          }
+        });
 
-          messagePopupClose.addEventListener('click', hideMessagePopup);
-          messageOverlay.addEventListener('click', hideMessagePopup);
+        messagePopupClose.addEventListener('click', hideMessagePopup);
+        messageOverlay.addEventListener('click', hideMessagePopup);
 
-          closeButton.addEventListener('click', () => {
-            window.location.href = '/';
-          });
-        } catch (error) {
-          console.error('Error in form script:', error);
-        }
+        closeButton.addEventListener('click', () => {
+          window.location.href = '/';
+        });
       </script>
     </body>
     </html>
