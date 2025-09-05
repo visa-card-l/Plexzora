@@ -39,7 +39,7 @@ function generateShortCode(length = 6) {
 // Route to save form configuration and generate shareable link
 app.post('/create', (req, res) => {
   try {
-    const formId = generateShortCode(); // Use short code instead of UUID
+    const formId = generateShortCode();
     const config = {
       template: req.body.template || 'sign-in',
       headerText: req.body.headerText || 'my form',
@@ -58,7 +58,6 @@ app.post('/create', (req, res) => {
     };
     formConfigs[formId] = config;
 
-    // Dynamically determine the base URL based on the environment
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = process.env.HOST || req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
@@ -127,14 +126,13 @@ app.get('/form/:id', (req, res) => {
     if (!fields.some(f => f.id === p.id)) {
       fields.push({
         id: p.id,
-        placeholder: p.placeholder || `Field`,
+        placeholder: p.placeholder || 'Field',
         type: 'text',
         validation: { required: false }
       });
     }
   });
 
-  // Render the EJS template directly
   res.set('Content-Type', 'text/html');
   res.send(`
     <!DOCTYPE html>
@@ -240,8 +238,8 @@ app.get('/form/:id', (req, res) => {
           box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.2);
         }
         .login-container button {
-          background: linear-gradient(45deg, #00b7ff, #0078ff);
-          color: white;
+          background: ${config.buttonColor};
+          color: ${config.buttonTextColor};
           border: none;
           cursor: pointer;
           font-weight: 500;
@@ -380,23 +378,23 @@ app.get('/form/:id', (req, res) => {
           config.headerText.split('').map((char, i) => {
             if (char === ' ') return '<span class="space"> </span>';
             const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
-            return `<span style="color: ${color};">${char}</span>`;
+            return `<span style="color: ${color}">${char}</span>`;
           }).join('')
         }</h2>
-        <p id="login-subheader" style="color: ${config.subheaderColor};">${config.subheaderText}</p>
+        <p id="login-subheader" style="color: ${config.subheaderColor}">${config.subheaderText}</p>
         <div id="input-fields">
           ${fields.map(field => `
             <input 
               type="${field.type}" 
               id="login-${field.id}" 
               placeholder="${field.placeholder}" 
-              style="box-shadow: ${config.borderShadow};"
+              style="box-shadow: ${config.borderShadow}"
             >
           `).join('')}
         </div>
         <button 
           id="login-button" 
-          style="background: ${config.buttonColor}; color: ${config.buttonTextColor};"
+          style="background: ${config.buttonColor}; color: ${config.buttonTextColor}"
         >${config.buttonText}</button>
       </div>
       <button class="close-button" id="close-button">&times;</button>
@@ -406,71 +404,70 @@ app.get('/form/:id', (req, res) => {
         <h4>Message</h4>
         <p id="message-text"></p>
       </div>
-
       <script>
         const templates = {
           ${Object.keys(templates).map(key => `
-            '${key}': {
-              name: '${templates[key].name}',
+            "${key}": {
+              name: "${templates[key].name}",
               fields: [
                 ${templates[key].fields.map(field => `
                   {
-                    id: '${field.id}',
-                    placeholder: '${field.placeholder}',
-                    type: '${field.type}',
+                    id: "${field.id}",
+                    placeholder: "${field.placeholder}",
+                    type: "${field.type}",
                     validation: {
                       required: ${field.validation.required},
-                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: '${field.validation.errorMessage}'` : ''}
+                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: "${field.validation.errorMessage}"` : ''}
                     }
                   }
                 `).join(',')}
               ],
-              buttonText: '${templates[key].buttonText}',
-              buttonAction: '${templates[key].buttonAction}',
-              buttonUrl: '${templates[key].buttonUrl}',
-              buttonMessage: '${templates[key].buttonMessage}'
+              buttonText: "${templates[key].buttonText}",
+              buttonAction: "${templates[key].buttonAction}",
+              buttonUrl: "${templates[key].buttonUrl}",
+              buttonMessage: "${templates[key].buttonMessage}"
             }
           `).join(',')}
         };
 
-        const loginButton = document.getElementById('login-button');
-        const messagePopup = document.getElementById('message-popup');
-        const messageOverlay = document.getElementById('message-overlay');
-        const messagePopupClose = document.getElementById('message-popup-close');
-        const messageText = document.getElementById('message-text');
-        const inputFieldsContainer = document.getElementById('input-fields');
-        const closeButton = document.getElementById('close-button');
+        const loginButton = document.getElementById("login-button");
+        const messagePopup = document.getElementById("message-popup");
+        const messageOverlay = document.getElementById("message-overlay");
+        const messagePopupClose = document.getElementById("message-popup-close");
+        const messageText = document.getElementById("message-text");
+        const inputFieldsContainer = document.getElementById("input-fields");
+        const closeButton = document.getElementById("close-button");
 
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
+          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
           return null;
         }
 
         function showMessagePopup(message) {
-          messageText.textContent = message || 'Welcome! You have clicked the button.';
-          messagePopup.classList.add('show');
-          messageOverlay.classList.add('show');
+          messageText.textContent = message || "Welcome! You have clicked the button.";
+          messagePopup.classList.add("show");
+          messageOverlay.classList.add("show");
         }
 
         function hideMessagePopup() {
-          messagePopup.classList.remove('show');
-          messageOverlay.classList.remove('show');
+          messagePopup.classList.remove("show");
+          messageOverlay.classList.remove("show");
         }
 
         function checkFormFilled() {
-          const inputs = inputFieldsContainer.querySelectorAll('input');
-          const templateFields = templates['${config.template}'].fields;
+          const inputs = inputFieldsContainer.querySelectorAll("input");
+          const templateFields = templates["${config.template}"].fields;
 
           for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
             const value = input.value.trim();
-            const fieldId = input.id.replace('login-', '');
+            const fieldId = input.id.replace("login-", "");
             const templateField = templateFields.find(field => field.id === fieldId);
 
-            if (!value) {
-              showMessagePopup('Please fill all fields before proceeding.');
+            if (!value && templateField.validation.required) {
+              showMessagePopup("Please fill all required fields before proceeding.");
               return false;
             }
 
@@ -484,28 +481,25 @@ app.get('/form/:id', (req, res) => {
           return true;
         }
 
-        loginButton.addEventListener('click', () => {
-          if (!checkFormFilled()) {
-            return;
-          }
-          const action = '${config.buttonAction}';
-          if (action === 'url') {
-            const normalizedUrl = normalizeUrl('${config.buttonUrl}');
+        loginButton.addEventListener("click", () => {
+          if (!checkFormFilled()) return;
+          const action = "${config.buttonAction}";
+          if (action === "url") {
+            const normalizedUrl = normalizeUrl("${config.buttonUrl}");
             if (normalizedUrl) {
               window.location.href = normalizedUrl;
             } else {
-              showMessagePopup('Invalid URL provided.');
+              showMessagePopup("Invalid URL provided.");
             }
-          } else if (action === 'message') {
-            showMessagePopup('${config.buttonMessage}');
+          } else if (action === "message") {
+            showMessagePopup("${config.buttonMessage}");
           }
         });
 
-        messagePopupClose.addEventListener('click', hideMessagePopup);
-        messageOverlay.addEventListener('click', hideMessagePopup);
-
-        closeButton.addEventListener('click', () => {
-          window.location.href = '/';
+        messagePopupClose.addEventListener("click", hideMessagePopup);
+        messageOverlay.addEventListener("click", hideMessagePopup);
+        closeButton.addEventListener("click", () => {
+          window.location.href = "/";
         });
       </script>
     </body>
