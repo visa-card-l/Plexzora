@@ -262,28 +262,6 @@ app.get('/:id', (req, res) => {
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
         }
-        .close-button {
-          display: block;
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          width: 32px;
-          height: 32px;
-          background: none;
-          border: none;
-          font-size: 1.4rem;
-          font-weight: bold;
-          color: #555555;
-          cursor: pointer;
-          transition: color 0.2s ease;
-          z-index: 1000;
-        }
-        body.dark-mode .close-button {
-          color: #f8f9fa;
-        }
-        .close-button:hover {
-          color: #ff4757;
-        }
         .popup {
           display: none;
           position: fixed;
@@ -381,13 +359,6 @@ app.get('/:id', (req, res) => {
           .login-container button {
             padding: 14px;
           }
-          .close-button {
-            top: 12px;
-            right: 12px;
-            width: 32px;
-            height: 32px;
-            font-size: 1.4rem;
-          }
           .popup {
             width: 80%;
             max-width: 240px;
@@ -445,7 +416,6 @@ app.get('/:id', (req, res) => {
           style="background: ${config.buttonColor}; color: ${config.buttonTextColor}"
         >${config.buttonText}</button>
       </div>
-      <button class="close-button" id="close-button">&times;</button>
       <div class="overlay" id="message-overlay"></div>
       <div class="popup" id="message-popup">
         <button class="popup-close" id="message-popup-close">&times;</button>
@@ -453,6 +423,9 @@ app.get('/:id', (req, res) => {
         <p id="message-text"></p>
       </div>
       <script>
+        // Debugging: Log to check if script is running
+        console.log('Script loaded for template: ${config.template}');
+
         const templates = {
           ${Object.keys(templates).map(key => `
             '${key}': {
@@ -484,29 +457,37 @@ app.get('/:id', (req, res) => {
         const messagePopupClose = document.getElementById('message-popup-close');
         const messageText = document.getElementById('message-text');
         const inputFieldsContainer = document.getElementById('input-fields');
-        const closeButton = document.getElementById('close-button');
+
+        // Debugging: Verify elements are found
+        console.log('loginButton:', loginButton);
+        console.log('inputFieldsContainer:', inputFieldsContainer);
 
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
+          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
           return null;
         }
 
         function showMessagePopup(message) {
+          console.log('Showing popup with message:', message);
           messageText.textContent = message || 'Welcome! You have clicked the button.';
           messagePopup.classList.add('show');
           messageOverlay.classList.add('show');
         }
 
         function hideMessagePopup() {
+          console.log('Hiding popup');
           messagePopup.classList.remove('show');
           messageOverlay.classList.remove('show');
         }
 
         function checkFormFilled() {
           const inputs = inputFieldsContainer.querySelectorAll('input');
-          const templateFields = templates['${config.template}'].fields;
+          const templateFields = templates['${config.template}']?.fields || [];
+
+          console.log('Inputs found:', inputs.length);
+          console.log('Template fields:', templateFields);
 
           for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
@@ -514,44 +495,57 @@ app.get('/:id', (req, res) => {
             const fieldId = input.id.replace('login-', '');
             const templateField = templateFields.find(field => field.id === fieldId);
 
-            if (!value) {
-              showMessagePopup('Please fill all fields before proceeding.');
+            console.log(`Checking field: ${fieldId}, Value: ${value}, TemplateField:`, templateField);
+
+            if (!value && (!templateField || templateField.validation.required)) {
+              showMessagePopup('Please fill all required fields before proceeding.');
               return false;
             }
 
-            if (templateField && templateField.validation && templateField.validation.regex) {
-              if (!templateField.validation.regex.test(value)) {
-                showMessagePopup(templateField.validation.errorMessage);
-                return false;
-              }
+            if (templateField && templateField.validation.regex && !templateField.validation.regex.test(value)) {
+              showMessagePopup(templateField.validation.errorMessage);
+              return false;
             }
           }
           return true;
         }
 
-        loginButton.addEventListener('click', () => {
-          if (!checkFormFilled()) {
-            return;
-          }
-          const action = '${config.buttonAction}';
-          if (action === 'url') {
-            const normalizedUrl = normalizeUrl('${config.buttonUrl}');
-            if (normalizedUrl) {
-              window.location.href = normalizedUrl;
-            } else {
-              showMessagePopup('Invalid URL provided.');
+        if (loginButton) {
+          loginButton.addEventListener('click', () => {
+            console.log('Button clicked, action: ${config.buttonAction}');
+            if (!checkFormFilled()) {
+              console.log('Form validation failed');
+              return;
             }
-          } else if (action === 'message') {
-            showMessagePopup('${config.buttonMessage}');
-          }
-        });
+            const action = '${config.buttonAction}';
+            const buttonUrl = '${config.buttonUrl ? config.buttonUrl.replace(/'/g, "\\'") : ''}';
+            const buttonMessage = '${config.buttonMessage ? config.buttonMessage.replace(/'/g, "\\'") : ''}';
+            console.log('Action:', action, 'URL:', buttonUrl, 'Message:', buttonMessage);
+            if (action === 'url') {
+              const normalizedUrl = normalizeUrl(buttonUrl);
+              if (normalizedUrl) {
+                console.log('Redirecting to:', normalizedUrl);
+                window.location.href = normalizedUrl;
+              } else {
+                showMessagePopup('Invalid URL provided.');
+              }
+            } else if (action === 'message') {
+              showMessagePopup(buttonMessage);
+            } else {
+              console.log('Unknown action:', action);
+              showMessagePopup('Invalid button action.');
+            }
+          });
+        } else {
+          console.error('Login button not found');
+        }
 
-        messagePopupClose.addEventListener('click', hideMessagePopup);
-        messageOverlay.addEventListener('click', hideMessagePopup);
-
-        closeButton.addEventListener('click', () => {
-          window.location.href = '/';
-        });
+        if (messagePopupClose) {
+          messagePopupClose.addEventListener('click', hideMessagePopup);
+        }
+        if (messageOverlay) {
+          messageOverlay.addEventListener('click', hideMessagePopup);
+        }
       </script>
     </body>
     </html>
