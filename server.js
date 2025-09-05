@@ -31,7 +31,7 @@ function generateShortCode(length = 6) {
   }
   // Ensure uniqueness
   if (formConfigs[code]) {
-    return generateShortCode(length); // Recursively try again if code exists
+    return generateShortCode(length);
   }
   return code;
 }
@@ -424,44 +424,6 @@ app.get('/:id', (req, res) => {
         <p id="message-text"></p>
       </div>
       <script>
-        const templates = {
-          ${Object.keys(templates)
-            .map(
-              key => `
-            "${key}": {
-              name: "${templates[key].name}",
-              fields: [
-                ${templates[key].fields
-                  .map(
-                    field => `
-                  {
-                    id: "${field.id}",
-                    placeholder: "${field.placeholder}",
-                    type: "${field.type}",
-                    validation: {
-                      required: ${field.validation.required}${
-                      field.validation.regex
-                        ? `,
-                      regex: /${field.validation.regex}/,
-                      errorMessage: "${field.validation.errorMessage}"`
-                        : ''
-                    }
-                    }
-                  }
-                `
-                  )
-                  .join(',')}
-              ],
-              buttonText: "${templates[key].buttonText}",
-              buttonAction: "${templates[key].buttonAction}",
-              buttonUrl: "${templates[key].buttonUrl}",
-              buttonMessage: "${templates[key].buttonMessage}"
-            }
-          `
-            )
-            .join(',')}
-        };
-
         const loginButton = document.getElementById("login-button");
         const messagePopup = document.getElementById("message-popup");
         const messageOverlay = document.getElementById("message-overlay");
@@ -472,7 +434,7 @@ app.get('/:id', (req, res) => {
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
+          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
           return null;
         }
 
@@ -489,7 +451,25 @@ app.get('/:id', (req, res) => {
 
         function checkFormFilled() {
           const inputs = inputFieldsContainer.querySelectorAll("input");
-          const templateFields = templates["${config.template}"].fields;
+          const templateFields = [
+            ${template.fields
+              .map(
+                field => `
+              {
+                id: "${field.id}",
+                validation: {
+                  required: ${field.validation.required}${
+                  field.validation.regex
+                    ? `,
+                  regex: /${field.validation.regex}/,
+                  errorMessage: "${field.validation.errorMessage}"`
+                    : ''
+                }
+              }
+            `
+              )
+              .join(',')}
+          ];
 
           for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
