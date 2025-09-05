@@ -57,9 +57,10 @@ app.post('/create', (req, res) => {
     };
     formConfigs[formId] = config;
 
+    // Dynamically determine the base URL based on the environment
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = process.env.HOST || req.headers.host || `localhost:${port}`;
-    const url = `${protocol}://${host}/${formId}`;
+    const url = `${protocol}://${host}/form/${formId}`;
     res.json({ url });
   } catch (error) {
     console.error('Error saving form configuration:', error);
@@ -68,7 +69,7 @@ app.post('/create', (req, res) => {
 });
 
 // Route to serve the live form
-app.get('/:id', (req, res) => {
+app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   if (!config) {
@@ -125,13 +126,14 @@ app.get('/:id', (req, res) => {
     if (!fields.some(f => f.id === p.id)) {
       fields.push({
         id: p.id,
-        placeholder: p.placeholder || 'Field',
+        placeholder: p.placeholder || `Field`,
         type: 'text',
         validation: { required: false }
       });
     }
   });
 
+  // Render the EJS template directly
   res.set('Content-Type', 'text/html');
   res.send(`
     <!DOCTYPE html>
@@ -156,9 +158,7 @@ app.get('/:id', (req, res) => {
           transition: all 0.3s ease;
           position: relative;
         }
-        body.dark-mode {
-          background: #000000;
-        }
+        body.dark-mode { background: #000000; }
         body.saved-mode {
           display: flex;
           flex-direction: column;
@@ -167,9 +167,7 @@ app.get('/:id', (req, res) => {
           background: #f8f9fa;
           padding: 40px 20px 20px;
         }
-        body.dark-mode.saved-mode {
-          background: #000000;
-        }
+        body.dark-mode.saved-mode { background: #000000; }
         .login-container {
           background: white;
           padding: 20px;
@@ -201,20 +199,15 @@ app.get('/:id', (req, res) => {
           font-weight: 700;
           color: #000000;
         }
-        body.dark-mode .login-container h2 {
-          color: #ffffff;
-        }
+        body.dark-mode .login-container h2 { color: #ffffff; }
         .login-container p {
           font-family: 'Roboto', sans-serif;
           font-size: 0.9rem;
           color: #555555;
           font-weight: 400;
         }
-        body.dark-mode .login-container p {
-          color: #ffffff;
-        }
-        .login-container input,
-        .login-container button {
+        body.dark-mode .login-container p { color: #ffffff; }
+        .login-container input, .login-container button {
           width: 100%;
           margin-left: auto;
           margin-right: auto;
@@ -235,10 +228,7 @@ app.get('/:id', (req, res) => {
           background: #3b4a6b;
           color: #f8f9fa;
         }
-        body.dark-mode .login-container input::placeholder {
-          color: #ffffff;
-          opacity: 1;
-        }
+        body.dark-mode .login-container input::placeholder { color: #ffffff; opacity: 1; }
         .login-container input:focus {
           outline: none;
           box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.2);
@@ -249,8 +239,8 @@ app.get('/:id', (req, res) => {
           box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.2);
         }
         .login-container button {
-          background: ${config.buttonColor};
-          color: ${config.buttonTextColor};
+          background: linear-gradient(45deg, #00b7ff, #0078ff);
+          color: white;
           border: none;
           cursor: pointer;
           font-weight: 500;
@@ -262,6 +252,24 @@ app.get('/:id', (req, res) => {
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
         }
+        .close-button {
+          display: block;
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          width: 32px;
+          height: 32px;
+          background: none;
+          border: none;
+          font-size: 1.4rem;
+          font-weight: bold;
+          color: #555555;
+          cursor: pointer;
+          transition: color 0.2s ease;
+          z-index: 1000;
+        }
+        body.dark-mode .close-button { color: #f8f9fa; }
+        .close-button:hover { color: #ff4757; }
         .popup {
           display: none;
           position: fixed;
@@ -280,27 +288,21 @@ app.get('/:id', (req, res) => {
           background: #2f3b5a;
           box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
         }
-        .popup.show {
-          display: block;
-        }
+        .popup.show { display: block; }
         .popup h4 {
           font-size: 0.85rem;
           font-weight: 600;
           color: #333333;
           margin-bottom: 8px;
         }
-        body.dark-mode .popup h4 {
-          color: #f8f9fa;
-        }
+        body.dark-mode .popup h4 { color: #f8f9fa; }
         .popup p {
           font-size: 0.75rem;
           color: #555555;
           margin-bottom: 8px;
           line-height: 1.4;
         }
-        body.dark-mode .popup p {
-          color: #d1d5db;
-        }
+        body.dark-mode .popup p { color: #d1d5db; }
         .popup-close {
           position: absolute;
           top: 8px;
@@ -312,12 +314,8 @@ app.get('/:id', (req, res) => {
           cursor: pointer;
           transition: color 0.2s ease;
         }
-        body.dark-mode .popup-close {
-          color: #f8f9fa;
-        }
-        .popup-close:hover {
-          color: #00b7ff;
-        }
+        body.dark-mode .popup-close { color: #f8f9fa; }
+        .popup-close:hover { color: #00b7ff; }
         .overlay {
           display: none;
           position: fixed;
@@ -328,9 +326,7 @@ app.get('/:id', (req, res) => {
           background: rgba(0, 0, 0, 0.4);
           z-index: 999;
         }
-        .overlay.show {
-          display: block;
-        }
+        .overlay.show { display: block; }
         @media (max-width: 768px) {
           body {
             flex-direction: column;
@@ -338,9 +334,7 @@ app.get('/:id', (req, res) => {
             gap: 16px;
             padding: 30px 16px 16px;
           }
-          body.saved-mode {
-            padding: 30px 16px 16px;
-          }
+          body.saved-mode { padding: 30px 16px 16px; }
           .login-container {
             width: 100%;
             max-width: 300px;
@@ -348,16 +342,18 @@ app.get('/:id', (req, res) => {
             min-height: 300px;
             padding: 16px;
           }
-          .login-container h2 {
-            font-size: 1.6rem;
-          }
-          .login-container input,
-          .login-container button {
+          .login-container h2 { font-size: 1.6rem; }
+          .login-container input, .login-container button {
             padding: 12px;
             font-size: 0.9rem;
           }
-          .login-container button {
-            padding: 14px;
+          .login-container button { padding: 14px; }
+          .close-button {
+            top: 12px;
+            right: 12px;
+            width: 32px;
+            height: 32px;
+            font-size: 1.4rem;
           }
           .popup {
             width: 80%;
@@ -366,66 +362,51 @@ app.get('/:id', (req, res) => {
           }
         }
         @media (max-width: 480px) {
-          .login-container h2 {
-            font-size: 1.4rem;
-          }
-          .login-container p {
-            font-size: 0.8rem;
-          }
-          .login-container input,
-          .login-container button {
+          .login-container h2 { font-size: 1.4rem; }
+          .login-container p { font-size: 0.8rem; }
+          .login-container input, .login-container button {
             font-size: 0.85rem;
             padding: 10px;
           }
-          .login-container button {
-            padding: 12px;
-          }
-          .login-container {
-            max-width: 280px;
-          }
+          .login-container button { padding: 12px; }
+          .login-container { max-width: 280px; }
         }
       </style>
     </head>
     <body class="saved-mode ${config.theme === 'dark' ? 'dark-mode' : ''}">
       <div class="login-container">
-        <h2 id="login-header">${config.headerText
-          .split('')
-          .map((char, i) => {
+        <h2 id="login-header">${
+          config.headerText.split('').map((char, i) => {
             if (char === ' ') return '<span class="space"> </span>';
             const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
             return `<span style="color: ${color}">${char}</span>`;
-          })
-          .join('')}</h2>
+          }).join('')
+        }</h2>
         <p id="login-subheader" style="color: ${config.subheaderColor}">${config.subheaderText}</p>
         <div id="input-fields">
-          ${fields
-            .map(
-              field => `
-            <input
-              type="${field.type}"
-              id="login-${field.id}"
-              placeholder="${field.placeholder}"
-              style="box-shadow: ${config.borderShadow}"
+          ${fields.map(field => `
+            <input 
+              type="${field.type}" 
+              id="login-${field.id}" 
+              placeholder="${field.placeholder}" 
+              style="box-shadow: ${config.borderShadow};"
             >
-          `
-            )
-            .join('')}
+          `).join('')}
         </div>
-        <button
-          id="login-button"
-          style="background: ${config.buttonColor}; color: ${config.buttonTextColor}"
+        <button 
+          id="login-button" 
+          style="background: ${config.buttonColor}; color: ${config.buttonTextColor};"
         >${config.buttonText}</button>
       </div>
+      <button class="close-button" id="close-button">&times;</button>
       <div class="overlay" id="message-overlay"></div>
       <div class="popup" id="message-popup">
         <button class="popup-close" id="message-popup-close">&times;</button>
         <h4>Message</h4>
         <p id="message-text"></p>
       </div>
-      <script>
-        // Debugging: Log to check if script is running
-        console.log('Script loaded for template: ${config.template}');
 
+      <script>
         const templates = {
           ${Object.keys(templates).map(key => `
             '${key}': {
@@ -457,37 +438,29 @@ app.get('/:id', (req, res) => {
         const messagePopupClose = document.getElementById('message-popup-close');
         const messageText = document.getElementById('message-text');
         const inputFieldsContainer = document.getElementById('input-fields');
-
-        // Debugging: Verify elements are found
-        console.log('loginButton:', loginButton);
-        console.log('inputFieldsContainer:', inputFieldsContainer);
+        const closeButton = document.getElementById('close-button');
 
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
+          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
           return null;
         }
 
         function showMessagePopup(message) {
-          console.log('Showing popup with message:', message);
           messageText.textContent = message || 'Welcome! You have clicked the button.';
           messagePopup.classList.add('show');
           messageOverlay.classList.add('show');
         }
 
         function hideMessagePopup() {
-          console.log('Hiding popup');
           messagePopup.classList.remove('show');
           messageOverlay.classList.remove('show');
         }
 
         function checkFormFilled() {
           const inputs = inputFieldsContainer.querySelectorAll('input');
-          const templateFields = templates['${config.template}']?.fields || [];
-
-          console.log('Inputs found:', inputs.length);
-          console.log('Template fields:', templateFields);
+          const templateFields = templates['${config.template}'].fields;
 
           for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
@@ -495,57 +468,44 @@ app.get('/:id', (req, res) => {
             const fieldId = input.id.replace('login-', '');
             const templateField = templateFields.find(field => field.id === fieldId);
 
-            console.log(`Checking field: ${fieldId}, Value: ${value}, TemplateField:`, templateField);
-
-            if (!value && (!templateField || templateField.validation.required)) {
-              showMessagePopup('Please fill all required fields before proceeding.');
+            if (!value) {
+              showMessagePopup('Please fill all fields before proceeding.');
               return false;
             }
 
-            if (templateField && templateField.validation.regex && !templateField.validation.regex.test(value)) {
-              showMessagePopup(templateField.validation.errorMessage);
-              return false;
+            if (templateField && templateField.validation && templateField.validation.regex) {
+              if (!templateField.validation.regex.test(value)) {
+                showMessagePopup(templateField.validation.errorMessage);
+                return false;
+              }
             }
           }
           return true;
         }
 
-        if (loginButton) {
-          loginButton.addEventListener('click', () => {
-            console.log('Button clicked, action: ${config.buttonAction}');
-            if (!checkFormFilled()) {
-              console.log('Form validation failed');
-              return;
-            }
-            const action = '${config.buttonAction}';
-            const buttonUrl = '${config.buttonUrl ? config.buttonUrl.replace(/'/g, "\\'") : ''}';
-            const buttonMessage = '${config.buttonMessage ? config.buttonMessage.replace(/'/g, "\\'") : ''}';
-            console.log('Action:', action, 'URL:', buttonUrl, 'Message:', buttonMessage);
-            if (action === 'url') {
-              const normalizedUrl = normalizeUrl(buttonUrl);
-              if (normalizedUrl) {
-                console.log('Redirecting to:', normalizedUrl);
-                window.location.href = normalizedUrl;
-              } else {
-                showMessagePopup('Invalid URL provided.');
-              }
-            } else if (action === 'message') {
-              showMessagePopup(buttonMessage);
+        loginButton.addEventListener('click', () => {
+          if (!checkFormFilled()) {
+            return;
+          }
+          const action = '${config.buttonAction}';
+          if (action === 'url') {
+            const normalizedUrl = normalizeUrl('${config.buttonUrl}');
+            if (normalizedUrl) {
+              window.location.href = normalizedUrl;
             } else {
-              console.log('Unknown action:', action);
-              showMessagePopup('Invalid button action.');
+              showMessagePopup('Invalid URL provided.');
             }
-          });
-        } else {
-          console.error('Login button not found');
-        }
+          } else if (action === 'message') {
+            showMessagePopup('${config.buttonMessage}');
+          }
+        });
 
-        if (messagePopupClose) {
-          messagePopupClose.addEventListener('click', hideMessagePopup);
-        }
-        if (messageOverlay) {
-          messageOverlay.addEventListener('click', hideMessagePopup);
-        }
+        messagePopupClose.addEventListener('click', hideMessagePopup);
+        messageOverlay.addEventListener('click', hideMessagePopup);
+
+        closeButton.addEventListener('click', () => {
+          window.location.href = '/';
+        });
       </script>
     </body>
     </html>
