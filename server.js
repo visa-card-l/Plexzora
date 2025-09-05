@@ -60,7 +60,7 @@ app.post('/create', (req, res) => {
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = process.env.HOST || req.headers.host || `localhost:${port}`;
-    const url = `${protocol}://${host}/${formId}`; // Removed /form from URL
+    const url = `${protocol}://${host}/${formId}`;
     res.json({ url });
   } catch (error) {
     console.error('Error saving form configuration:', error);
@@ -157,7 +157,9 @@ app.get('/:id', (req, res) => {
           transition: all 0.3s ease;
           position: relative;
         }
-        body.dark-mode { background: #000000; }
+        body.dark-mode {
+          background: #000000;
+        }
         body.saved-mode {
           display: flex;
           flex-direction: column;
@@ -166,7 +168,9 @@ app.get('/:id', (req, res) => {
           background: #f8f9fa;
           padding: 40px 20px 20px;
         }
-        body.dark-mode.saved-mode { background: #000000; }
+        body.dark-mode.saved-mode {
+          background: #000000;
+        }
         .login-container {
           background: white;
           padding: 20px;
@@ -198,15 +202,20 @@ app.get('/:id', (req, res) => {
           font-weight: 700;
           color: #000000;
         }
-        body.dark-mode .login-container h2 { color: #ffffff; }
+        body.dark-mode .login-container h2 {
+          color: #ffffff;
+        }
         .login-container p {
           font-family: 'Roboto', sans-serif;
           font-size: 0.9rem;
           color: #555555;
           font-weight: 400;
         }
-        body.dark-mode .login-container p { color: #ffffff; }
-        .login-container input, .login-container button {
+        body.dark-mode .login-container p {
+          color: #ffffff;
+        }
+        .login-container input,
+        .login-container button {
           width: 100%;
           margin-left: auto;
           margin-right: auto;
@@ -227,7 +236,10 @@ app.get('/:id', (req, res) => {
           background: #3b4a6b;
           color: #f8f9fa;
         }
-        body.dark-mode .login-container input::placeholder { color: #ffffff; opacity: 1; }
+        body.dark-mode .login-container input::placeholder {
+          color: #ffffff;
+          opacity: 1;
+        }
         .login-container input:focus {
           outline: none;
           box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.2);
@@ -269,21 +281,27 @@ app.get('/:id', (req, res) => {
           background: #2f3b5a;
           box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
         }
-        .popup.show { display: block; }
+        .popup.show {
+          display: block;
+        }
         .popup h4 {
           font-size: 0.85rem;
           font-weight: 600;
           color: #333333;
           margin-bottom: 8px;
         }
-        body.dark-mode .popup h4 { color: #f8f9fa; }
+        body.dark-mode .popup h4 {
+          color: #f8f9fa;
+        }
         .popup p {
           font-size: 0.75rem;
           color: #555555;
           margin-bottom: 8px;
           line-height: 1.4;
         }
-        body.dark-mode .popup p { color: #d1d5db; }
+        body.dark-mode .popup p {
+          color: #d1d5db;
+        }
         .popup-close {
           position: absolute;
           top: 8px;
@@ -295,8 +313,12 @@ app.get('/:id', (req, res) => {
           cursor: pointer;
           transition: color 0.2s ease;
         }
-        body.dark-mode .popup-close { color: #f8f9fa; }
-        .popup-close:hover { color: #00b7ff; }
+        body.dark-mode .popup-close {
+          color: #f8f9fa;
+        }
+        .popup-close:hover {
+          color: #00b7ff;
+        }
         .overlay {
           display: none;
           position: fixed;
@@ -307,7 +329,9 @@ app.get('/:id', (req, res) => {
           background: rgba(0, 0, 0, 0.4);
           z-index: 999;
         }
-        .overlay.show { display: block; }
+        .overlay.show {
+          display: block;
+        }
         @media (max-width: 768px) {
           body {
             flex-direction: column;
@@ -315,7 +339,9 @@ app.get('/:id', (req, res) => {
             gap: 16px;
             padding: 30px 16px 16px;
           }
-          body.saved-mode { padding: 30px 16px 16px; }
+          body.saved-mode {
+            padding: 30px 16px 16px;
+          }
           .login-container {
             width: 100%;
             max-width: 300px;
@@ -323,12 +349,17 @@ app.get('/:id', (req, res) => {
             min-height: 300px;
             padding: 16px;
           }
-          .login-container h2 { font-size: 1.6rem; }
-          .login-container input, .login-container button {
+          .login-container h2 {
+            font-size: 1.6rem;
+          }
+          .login-container input,
+          .login-container button {
             padding: 12px;
             font-size: 0.9rem;
           }
-          .login-container button { padding: 14px; }
+          .login-container button {
+            padding: 14px;
+          }
           .popup {
             width: 80%;
             max-width: 240px;
@@ -336,39 +367,53 @@ app.get('/:id', (req, res) => {
           }
         }
         @media (max-width: 480px) {
-          .login-container h2 { font-size: 1.4rem; }
-          .login-container p { font-size: 0.8rem; }
-          .login-container input, .login-container button {
+          .login-container h2 {
+            font-size: 1.4rem;
+          }
+          .login-container p {
+            font-size: 0.8rem;
+          }
+          .login-container input,
+          .login-container button {
             font-size: 0.85rem;
             padding: 10px;
           }
-          .login-container button { padding: 12px; }
-          .login-container { max-width: 280px; }
+          .login-container button {
+            padding: 12px;
+          }
+          .login-container {
+            max-width: 280px;
+          }
         }
       </style>
     </head>
     <body class="saved-mode ${config.theme === 'dark' ? 'dark-mode' : ''}">
       <div class="login-container">
-        <h2 id="login-header">${
-          config.headerText.split('').map((char, i) => {
+        <h2 id="login-header">${config.headerText
+          .split('')
+          .map((char, i) => {
             if (char === ' ') return '<span class="space"> </span>';
             const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
             return `<span style="color: ${color}">${char}</span>`;
-          }).join('')
-        }</h2>
+          })
+          .join('')}</h2>
         <p id="login-subheader" style="color: ${config.subheaderColor}">${config.subheaderText}</p>
         <div id="input-fields">
-          ${fields.map(field => `
-            <input 
-              type="${field.type}" 
-              id="login-${field.id}" 
-              placeholder="${field.placeholder}" 
+          ${fields
+            .map(
+              field => `
+            <input
+              type="${field.type}"
+              id="login-${field.id}"
+              placeholder="${field.placeholder}"
               style="box-shadow: ${config.borderShadow}"
             >
-          `).join('')}
+          `
+            )
+            .join('')}
         </div>
-        <button 
-          id="login-button" 
+        <button
+          id="login-button"
           style="background: ${config.buttonColor}; color: ${config.buttonTextColor}"
         >${config.buttonText}</button>
       </div>
@@ -380,28 +425,41 @@ app.get('/:id', (req, res) => {
       </div>
       <script>
         const templates = {
-          ${Object.keys(templates).map(key => `
+          ${Object.keys(templates)
+            .map(
+              key => `
             "${key}": {
               name: "${templates[key].name}",
               fields: [
-                ${templates[key].fields.map(field => `
+                ${templates[key].fields
+                  .map(
+                    field => `
                   {
                     id: "${field.id}",
                     placeholder: "${field.placeholder}",
                     type: "${field.type}",
                     validation: {
-                      required: ${field.validation.required},
-                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: "${field.validation.errorMessage}"` : ''}
+                      required: ${field.validation.required}${
+                      field.validation.regex
+                        ? `,
+                      regex: /${field.validation.regex}/,
+                      errorMessage: "${field.validation.errorMessage}"`
+                        : ''
+                    }
                     }
                   }
-                `).join(',')}
+                `
+                  )
+                  .join(',')}
               ],
               buttonText: "${templates[key].buttonText}",
               buttonAction: "${templates[key].buttonAction}",
               buttonUrl: "${templates[key].buttonUrl}",
               buttonMessage: "${templates[key].buttonMessage}"
             }
-          `).join(',')}
+          `
+            )
+            .join(',')}
         };
 
         const loginButton = document.getElementById("login-button");
@@ -414,7 +472,7 @@ app.get('/:id', (req, res) => {
         function normalizeUrl(url) {
           if (!url) return null;
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return `https://${url}`;
+          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
           return null;
         }
 
