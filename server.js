@@ -35,6 +35,12 @@ function generateShortCode(length = 6) {
   return code;
 }
 
+// Utility to sanitize strings for JavaScript interpolation
+function sanitizeForJs(str) {
+  if (!str) return '';
+  return str.replace(/['"`]/g, '\\$&').replace(/\n/g, '\\n');
+}
+
 // Route to save form configuration and generate shareable link
 app.post('/create', (req, res) => {
   try {
@@ -483,29 +489,33 @@ app.get('/form/:id', (req, res) => {
           return true;
         }
 
-        loginButton.addEventListener('click', () => {
-          if (!checkFormFilled()) {
-            return;
-          }
-          const action = '${config.buttonAction}';
-          if (action === 'url') {
-            const normalizedUrl = normalizeUrl('${config.buttonUrl}');
-            if (normalizedUrl) {
-              window.location.href = normalizedUrl;
-            } else {
-              showMessagePopup('Invalid URL provided.');
+        try {
+          loginButton.addEventListener('click', () => {
+            if (!checkFormFilled()) {
+              return;
             }
-          } else if (action === 'message') {
-            showMessagePopup('${config.buttonMessage}');
-          }
-        });
+            const action = '${sanitizeForJs(config.buttonAction)}';
+            if (action === 'url') {
+              const normalizedUrl = normalizeUrl('${sanitizeForJs(config.buttonUrl)}');
+              if (normalizedUrl) {
+                window.location.href = normalizedUrl;
+              } else {
+                showMessagePopup('Invalid URL provided.');
+              }
+            } else if (action === 'message') {
+              showMessagePopup('${sanitizeForJs(config.buttonMessage)}');
+            }
+          });
 
-        messagePopupClose.addEventListener('click', hideMessagePopup);
-        messageOverlay.addEventListener('click', hideMessagePopup);
+          messagePopupClose.addEventListener('click', hideMessagePopup);
+          messageOverlay.addEventListener('click', hideMessagePopup);
 
-        closeButton.addEventListener('click', () => {
-          window.location.href = '/';
-        });
+          closeButton.addEventListener('click', () => {
+            window.location.href = '/';
+          });
+        } catch (error) {
+          console.error('Error in form script:', error);
+        }
       </script>
     </body>
     </html>
