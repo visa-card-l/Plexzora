@@ -1,13 +1,15 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const ejs = require('ejs');
+const cors = require('cors');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Middleware
+app.use(cors()); // Enable CORS for frontend requests
 app.use(bodyParser.json());
-app.use(express.static('public')); // Ensure 'public' directory exists for static files if needed
+app.use(express.static('public')); // Optional: for static files
 app.set('view engine', 'ejs');
 
 // In-memory storage for form configurations (replace with database in production)
@@ -27,14 +29,12 @@ const formTemplate = `
       font-family: 'Inter', sans-serif;
       background: <%= theme === 'dark' ? '#1a1f2e' : '#f8f9fa' %>;
       display: flex;
-      flex-direction: column;
       justify-content: center;
       align-items: center;
       min-height: 100vh;
       margin: 0;
-      padding: 40px 20px 20px;
+      padding: 40px 20px;
       box-sizing: border-box;
-      transition: background 0.3s ease;
     }
     .login-container {
       background: <%= theme === 'dark' ? '#2f3b5a' : 'white' %>;
@@ -43,13 +43,8 @@ const formTemplate = `
       box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 320px;
       min-height: <%= minHeight %>;
-      height: auto;
       text-align: center;
       transition: transform 0.3s ease, box-shadow 0.3s ease;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
     }
     .login-container:hover {
       transform: scale(1.02);
@@ -61,13 +56,9 @@ const formTemplate = `
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
       margin: 0 0 10px;
     }
-    .login-container h2 span {
-      color: inherit;
-    }
     .login-container p {
       font-size: 0.9rem;
       color: <%= subheaderColor %>;
-      font-weight: 400;
       margin: 0 0 10px;
     }
     .login-container input, .login-container button {
@@ -77,7 +68,6 @@ const formTemplate = `
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
-      transition: all 0.2s ease;
     }
     .login-container input {
       border: none;
@@ -87,15 +77,10 @@ const formTemplate = `
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
-      opacity: 1;
     }
     .login-container input:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.3);
-      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
-    }
-    .login-container input:not(:placeholder-shown) {
-      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
     .login-container button {
       background: <%= buttonColor %>;
@@ -116,26 +101,20 @@ const formTemplate = `
       position: fixed;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%) scale(0.8);
+      transform: translate(-50%, -50%);
       background: <%= theme === 'dark' ? '#2f3b5a' : '#ffffff' %>;
       padding: 20px;
       border-radius: 12px;
       box-shadow: 0 6px 20px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
       z-index: 1000;
-      text-align: center;
       max-width: 300px;
       width: 90%;
-      transition: transform 0.3s ease, opacity 0.3s ease;
-      border: 1px solid rgba(0, 183, 255, 0.1);
     }
     .popup.show {
       display: block;
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 1;
     }
     .popup h4 {
       font-size: 1rem;
-      font-weight: 600;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       margin-bottom: 12px;
     }
@@ -143,7 +122,6 @@ const formTemplate = `
       font-size: 0.85rem;
       color: <%= theme === 'dark' ? '#d1d5db' : '#555555' %>;
       margin-bottom: 12px;
-      line-height: 1.4;
     }
     .popup-close {
       position: absolute;
@@ -154,7 +132,6 @@ const formTemplate = `
       font-size: 0.85rem;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#555555' %>;
       cursor: pointer;
-      transition: color 0.2s ease;
     }
     .popup-close:hover {
       color: #00b7ff;
@@ -168,61 +145,27 @@ const formTemplate = `
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
       z-index: 999;
-      backdrop-filter: blur(2px);
-      transition: opacity 0.3s ease;
     }
     .overlay.show {
       display: block;
-      opacity: 1;
     }
     @media (max-width: 768px) {
-      body {
-        padding: 30px 16px 16px;
-      }
       .login-container {
         width: 100%;
         max-width: 300px;
         padding: 16px;
       }
-      .login-container h2 {
-        font-size: 1.6rem;
-      }
-      .login-container p {
-        font-size: 0.8rem;
-      }
-      .login-container input, .login-container button {
-        padding: 12px;
-        font-size: 0.9rem;
-      }
-      .login-container button {
-        padding: 14px;
-      }
-      .popup {
-        width: 80%;
-        max-width: 280px;
-        padding: 16px;
-      }
+      .login-container h2 { font-size: 1.6rem; }
+      .login-container p { font-size: 0.8rem; }
+      .login-container input, .login-container button { padding: 12px; font-size: 0.9rem; }
+      .login-container button { padding: 14px; }
+      .popup { max-width: 280px; }
     }
     @media (max-width: 480px) {
-      .login-container {
-        max-width: 280px;
-      }
-      .login-container h2 {
-        font-size: 1.4rem;
-      }
-      .login-container p {
-        font-size: 0.8rem;
-      }
-      .login-container input, .login-container button {
-        font-size: 0.85rem;
-        padding: 10px;
-      }
-      .login-container button {
-        padding: 12px;
-      }
-      .popup {
-        max-width: 260px;
-      }
+      .login-container { max-width: 280px; }
+      .login-container h2 { font-size: 1.4rem; }
+      .login-container input, .login-container button { font-size: 0.85rem; padding: 10px; }
+      .popup { max-width: 260px; }
     }
   </style>
 </head>
@@ -232,23 +175,15 @@ const formTemplate = `
     <p id="login-subheader" style="color: <%= subheaderColor %>"><%= subheaderText %></p>
     <div id="input-fields">
       <% fields.forEach(field => { %>
-        <input 
-          type="<%= field.type %>" 
-          id="login-<%= field.id %>" 
-          placeholder="<%= field.placeholder %>" 
-          style="box-shadow: <%= borderShadow %>;"
-        >
+        <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
       <% }) %>
     </div>
-    <button 
-      id="login-button" 
-      style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;"
-    ><%= buttonText %></button>
+    <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;"><%= buttonText %></button>
   </div>
   <div class="overlay" id="message-overlay"></div>
-  <div class="popup" id="message-popup" role="alertdialog" aria-labelledby="message-popup-title">
-    <button class="popup-close" id="message-popup-close" aria-label="Close message popup">&times;</button>
-    <h4 id="message-popup-title">Message</h4>
+  <div class="popup" id="message-popup">
+    <button class="popup-close" id="message-popup-close">&times;</button>
+    <h4>Message</h4>
     <p id="message-text"></p>
   </div>
 
@@ -265,8 +200,8 @@ const formTemplate = `
     function normalizeUrl(url) {
       if (!url) return null;
       url = url.trim();
-      if (url.match(/^https?:\/\//)) return url;
-      if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
+      if (url.match(/^https?:\\/\\//)) return url;
+      if (url.match(/\\.[a-z]{2,}$/i)) return 'https://' + url;
       return null;
     }
 
@@ -292,7 +227,7 @@ const formTemplate = `
         const templateField = templateFields.find(field => field.id === fieldId);
 
         if (!value && (!templateField || templateField.validation.required)) {
-          showMessagePopup('Please fill all required fields before proceeding.');
+          showMessagePopup('Please fill all required fields.');
           return false;
         }
 
@@ -313,9 +248,7 @@ const formTemplate = `
 
     try {
       loginButton.addEventListener('click', () => {
-        if (!checkFormFilled()) {
-          return;
-        }
+        if (!checkFormFilled()) return;
         const action = '<%= buttonAction %>';
         const url = '<%= buttonUrl %>';
         const message = '<%= buttonMessage %>';
@@ -369,7 +302,7 @@ function generateShortCode(length = 6) {
   return code;
 }
 
-// Utility to sanitize strings for HTML and JavaScript
+// Utility to sanitize strings
 function sanitizeForJs(str) {
   if (!str) return '';
   return str
@@ -385,13 +318,14 @@ function sanitizeForJs(str) {
 // Route to save form configuration and generate shareable link
 app.post('/create', (req, res) => {
   try {
+    console.log('Received /create request:', req.body);
     const formId = generateShortCode();
     const validActions = ['url', 'message'];
     const config = {
       template: req.body.template || 'sign-in',
-      headerText: req.body.headerText || 'my form',
+      headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
-      subheaderText: req.body.subheaderText || 'fill the form',
+      subheaderText: req.body.subheaderText || 'Fill the form',
       subheaderColor: req.body.subheaderColor || '#555555',
       placeholders: Array.isArray(req.body.placeholders) ? req.body.placeholders.map(p => ({
         id: sanitizeForJs(p.id),
@@ -409,6 +343,7 @@ app.post('/create', (req, res) => {
 
     // Validate button configuration
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
+      console.error('Invalid URL provided:', config.buttonUrl);
       return res.status(400).json({ error: 'Invalid URL provided' });
     }
     if (config.buttonAction === 'message' && !config.buttonMessage) {
@@ -419,12 +354,13 @@ app.post('/create', (req, res) => {
     console.log(`Stored form config for ${formId}:`, config);
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-    const host = process.env.HOST || req.headers.host || `localhost:${port}`;
+    const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
-    res.json({ url });
+    console.log('Generated URL:', url);
+    res.status(200).json({ url });
   } catch (error) {
-    console.error('Error in /create:', error);
-    res.status(500).json({ error: 'Failed to generate shareable link' });
+    console.error('Error in /create:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
   }
 });
 
@@ -494,44 +430,44 @@ app.get('/form/:id', (req, res) => {
     }
   });
 
-  // Calculate min-height for login-container
   const inputCount = fields.length;
-  const baseHeight = 300;
-  const additionalHeight = (inputCount - template.fields.length) * 40;
-  const minHeight = `${baseHeight + additionalHeight}px`;
+  const minHeight = `${300 + (inputCount - template.fields.length) * 40}px`;
 
-  // Prepare header HTML
   const headerHtml = config.headerText.split('').map((char, i) => {
     if (char === ' ') return '<span class="space"> </span>';
     const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
     return `<span style="color: ${sanitizeForJs(color)}">${sanitizeForJs(char)}</span>`;
   }).join('');
 
-  // Render the template
-  const html = ejs.render(formTemplate, {
-    templateName: sanitizeForJs(template.name),
-    headerHtml,
-    subheaderText: sanitizeForJs(config.subheaderText),
-    subheaderColor: sanitizeForJs(config.subheaderColor),
-    fields,
-    borderShadow: sanitizeForJs(config.borderShadow),
-    buttonColor: sanitizeForJs(config.buttonColor),
-    buttonTextColor: sanitizeForJs(config.buttonTextColor),
-    buttonText: sanitizeForJs(config.buttonText),
-    buttonAction: sanitizeForJs(config.buttonAction),
-    buttonUrl: sanitizeForJs(config.buttonUrl || ''),
-    buttonMessage: sanitizeForJs(config.buttonMessage || ''),
-    theme: config.theme,
-    minHeight,
-    template: config.template,
-    templates: JSON.stringify(templates, (key, value) => {
-      if (key === 'regex' && value) return value.toString().slice(1, -1);
-      return value;
-    })
-  });
+  try {
+    const html = ejs.render(formTemplate, {
+      templateName: sanitizeForJs(template.name),
+      headerHtml,
+      subheaderText: sanitizeForJs(config.subheaderText),
+      subheaderColor: sanitizeForJs(config.subheaderColor),
+      fields,
+      borderShadow: sanitizeForJs(config.borderShadow),
+      buttonColor: sanitizeForJs(config.buttonColor),
+      buttonTextColor: sanitizeForJs(config.buttonTextColor),
+      buttonText: sanitizeForJs(config.buttonText),
+      buttonAction: sanitizeForJs(config.buttonAction),
+      buttonUrl: sanitizeForJs(config.buttonUrl || ''),
+      buttonMessage: sanitizeForJs(config.buttonMessage || ''),
+      theme: config.theme,
+      minHeight,
+      template: config.template,
+      templates: JSON.stringify(templates, (key, value) => {
+        if (key === 'regex' && value) return value.toString().slice(1, -1);
+        return value;
+      })
+    });
 
-  res.set('Content-Type', 'text/html');
-  res.send(html);
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    console.error('Error rendering form:', error.message, error.stack);
+    res.status(500).send('Error rendering form');
+  }
 });
 
 // Start the server
