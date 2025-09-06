@@ -11,7 +11,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// In-memory storage for form configurations (replace with a database in production)
+// In-memory storage for form configurations (replace with database in production)
 const formConfigs = {};
 
 // Utility to normalize URLs
@@ -39,7 +39,7 @@ function generateShortCode(length = 6) {
 // Utility to sanitize strings for JavaScript interpolation
 function sanitizeForJs(str) {
   if (!str) return '';
-  return str.replace(/['"`]/g, '\\$&').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+  return str.replace(/['"`]/g, '\\$&').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 }
 
 // Route to save form configuration and generate shareable link
@@ -59,10 +59,16 @@ app.post('/create', (req, res) => {
       buttonTextColor: req.body.buttonTextColor || '#ffffff',
       buttonText: req.body.buttonText || 'Sign In',
       buttonAction: validActions.includes(req.body.buttonAction) ? req.body.buttonAction : 'url',
-      buttonUrl: normalizeUrl(req.body.buttonUrl) || '',
+      buttonUrl: req.body.buttonUrl || '',
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light'
     };
+
+    // Validate URL if buttonAction is 'url'
+    if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
+      return res.status(400).json({ error: 'Invalid URL provided' });
+    }
+
     formConfigs[formId] = config;
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
@@ -140,7 +146,7 @@ app.get('/form/:id', (req, res) => {
     }
   });
 
-  // Calculate min-height for login-container based on fields
+  // Calculate min-height for login-container
   const inputCount = fields.length;
   const baseHeight = 300;
   const additionalHeight = (inputCount - template.fields.length) * 40;
@@ -200,7 +206,7 @@ app.get('/form/:id', (req, res) => {
         }
         .login-container p {
           font-size: 0.9rem;
-          color: ${config.theme === 'dark' ? '#d1d5db' : '#555555'};
+          color: ${config.subheaderColor};
           font-weight: 400;
           margin: 0 0 10px;
         }
@@ -394,24 +400,24 @@ app.get('/form/:id', (req, res) => {
           config.headerText.split('').map((char, i) => {
             if (char === ' ') return '<span class="space"> </span>';
             const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
-            return `<span style="color: ${color}">${char}</span>`;
+            return `<span style="color: ${sanitizeForJs(color)}">${sanitizeForJs(char)}</span>`;
           }).join('')
         }</h2>
-        <p id="login-subheader" style="color: ${config.subheaderColor}">${config.subheaderText}</p>
+        <p id="login-subheader" style="color: ${sanitizeForJs(config.subheaderColor)}">${sanitizeForJs(config.subheaderText)}</p>
         <div id="input-fields">
           ${fields.map(field => `
             <input 
-              type="${field.type}" 
-              id="login-${field.id}" 
-              placeholder="${field.placeholder}" 
-              style="box-shadow: ${config.borderShadow};"
+              type="${sanitizeForJs(field.type)}" 
+              id="login-${sanitizeForJs(field.id)}" 
+              placeholder="${sanitizeForJs(field.placeholder)}" 
+              style="box-shadow: ${sanitizeForJs(config.borderShadow)};"
             >
           `).join('')}
         </div>
         <button 
           id="login-button" 
-          style="background: ${config.buttonColor}; color: ${config.buttonTextColor};"
-        >${config.buttonText}</button>
+          style="background: ${sanitizeForJs(config.buttonColor)}; color: ${sanitizeForJs(config.buttonTextColor)};"
+        >${sanitizeForJs(config.buttonText)}</button>
       </div>
       <button class="close-button" id="close-button">&times;</button>
       <div class="overlay" id="message-overlay"></div>
@@ -422,6 +428,7 @@ app.get('/form/:id', (req, res) => {
       </div>
 
       <script>
+        // Define templates for validation
         const templates = {
           ${Object.keys(templates).map(key => `
             '${key}': {
@@ -429,24 +436,25 @@ app.get('/form/:id', (req, res) => {
               fields: [
                 ${templates[key].fields.map(field => `
                   {
-                    id: '${field.id}',
-                    placeholder: '${field.placeholder}',
-                    type: '${field.type}',
+                    id: '${sanitizeForJs(field.id)}',
+                    placeholder: '${sanitizeForJs(field.placeholder)}',
+                    type: '${sanitizeForJs(field.type)}',
                     validation: {
                       required: ${field.validation.required},
-                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: '${field.validation.errorMessage}'` : ''}
+                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: '${sanitizeForJs(field.validation.errorMessage)}'` : ''}
                     }
                   }
                 `).join(',')}
               ],
-              buttonText: '${templates[key].buttonText}',
-              buttonAction: '${templates[key].buttonAction}',
-              buttonUrl: '${templates[key].buttonUrl}',
-              buttonMessage: '${templates[key].buttonMessage}'
+              buttonText: '${sanitizeForJs(templates[key].buttonText)}',
+              buttonAction: '${sanitizeForJs(templates[key].buttonAction)}',
+              buttonUrl: '${sanitizeForJs(templates[key].buttonUrl)}',
+              buttonMessage: '${sanitizeForJs(templates[key].buttonMessage)}'
             }
           `).join(',')}
         };
 
+        // DOM elements
         const loginButton = document.getElementById('login-button');
         const messagePopup = document.getElementById('message-popup');
         const messageOverlay = document.getElementById('message-overlay');
@@ -455,28 +463,32 @@ app.get('/form/:id', (req, res) => {
         const inputFieldsContainer = document.getElementById('input-fields');
         const closeButton = document.getElementById('close-button');
 
+        // Normalize URL function (mirrors frontend)
         function normalizeUrl(url) {
           if (!url) return null;
           url = url.trim();
           if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return \`https://\${url}\`;
+          if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
           return null;
         }
 
+        // Show popup function (mirrors frontend)
         function showMessagePopup(message) {
           messageText.textContent = message || 'Welcome! You have clicked the button.';
           messagePopup.classList.add('show');
           messageOverlay.classList.add('show');
         }
 
+        // Hide popup function (mirrors frontend)
         function hideMessagePopup() {
           messagePopup.classList.remove('show');
           messageOverlay.classList.remove('show');
         }
 
+        // Form validation function (mirrors frontend)
         function checkFormFilled() {
           const inputs = inputFieldsContainer.querySelectorAll('input');
-          const templateFields = templates['${config.template}'].fields;
+          const templateFields = templates['${sanitizeForJs(config.template)}'].fields;
 
           for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
@@ -499,6 +511,7 @@ app.get('/form/:id', (req, res) => {
           return true;
         }
 
+        // Button event listener (mirrors frontend)
         try {
           loginButton.addEventListener('click', () => {
             if (!checkFormFilled()) {
