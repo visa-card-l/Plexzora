@@ -36,10 +36,17 @@ function generateShortCode(length = 6) {
   return code;
 }
 
-// Utility to sanitize strings for JavaScript interpolation
+// Utility to sanitize strings for HTML and JavaScript
 function sanitizeForJs(str) {
   if (!str) return '';
-  return str.replace(/['"`]/g, '\\$&').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  return str
+    .replace(/['"`]/g, '\\$&')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/&/g, '&amp;');
 }
 
 // Route to save form configuration and generate shareable link
@@ -59,24 +66,28 @@ app.post('/create', (req, res) => {
       buttonTextColor: req.body.buttonTextColor || '#ffffff',
       buttonText: req.body.buttonText || 'Sign In',
       buttonAction: validActions.includes(req.body.buttonAction) ? req.body.buttonAction : 'url',
-      buttonUrl: req.body.buttonUrl || '',
+      buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light'
     };
 
-    // Validate URL if buttonAction is 'url'
+    // Validate button configuration
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
       return res.status(400).json({ error: 'Invalid URL provided' });
     }
+    if (config.buttonAction === 'message' && !config.buttonMessage) {
+      config.buttonMessage = 'Form submitted successfully!';
+    }
 
     formConfigs[formId] = config;
+    console.log(`Stored form config for ${formId}:`, config); // Debug log
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = process.env.HOST || req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
     res.json({ url });
   } catch (error) {
-    console.error('Error saving form configuration:', error);
+    console.error('Error in /create:', error);
     res.status(500).json({ error: 'Failed to generate shareable link' });
   }
 });
@@ -86,6 +97,7 @@ app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   if (!config) {
+    console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
 
@@ -139,7 +151,7 @@ app.get('/form/:id', (req, res) => {
     if (!fields.some(f => f.id === p.id)) {
       fields.push({
         id: p.id,
-        placeholder: p.placeholder || `Field`,
+        placeholder: p.placeholder || template.fields.find(f => f.id === p.id)?.placeholder || 'Enter value',
         type: 'text',
         validation: { required: false }
       });
@@ -152,7 +164,7 @@ app.get('/form/:id', (req, res) => {
   const additionalHeight = (inputCount - template.fields.length) * 40;
   const minHeight = `${baseHeight + additionalHeight}px`;
 
-  // Render the form with embedded CSS and JavaScript
+  // Render the form
   res.set('Content-Type', 'text/html');
   res.send(`
     <!DOCTYPE html>
@@ -160,7 +172,7 @@ app.get('/form/:id', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${template.name}</title>
+      <title>${sanitizeForJs(template.name)}</title>
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
         body {
@@ -206,7 +218,7 @@ app.get('/form/:id', (req, res) => {
         }
         .login-container p {
           font-size: 0.9rem;
-          color: ${config.subheaderColor};
+          color: ${sanitizeForJs(config.subheaderColor)};
           font-weight: 400;
           margin: 0 0 10px;
         }
@@ -221,7 +233,7 @@ app.get('/form/:id', (req, res) => {
         }
         .login-container input {
           border: none;
-          box-shadow: ${config.borderShadow};
+          box-shadow: ${sanitizeForJs(config.borderShadow)};
           background: ${config.theme === 'dark' ? '#3b4a6b' : '#f8f9fa'};
           color: ${config.theme === 'dark' ? '#f8f9fa' : '#333333'};
         }
@@ -238,8 +250,8 @@ app.get('/form/:id', (req, res) => {
           background: ${config.theme === 'dark' ? '#3b4a6b' : '#ffffff'};
         }
         .login-container button {
-          background: ${config.buttonColor};
-          color: ${config.buttonTextColor};
+          background: ${sanitizeForJs(config.buttonColor)};
+          color: ${sanitizeForJs(config.buttonTextColor)};
           border: none;
           cursor: pointer;
           font-weight: 500;
@@ -249,28 +261,7 @@ app.get('/form/:id', (req, res) => {
         .login-container button:hover {
           transform: translateY(-2px);
           box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
-          background: ${config.buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : config.buttonColor};
-        }
-        .close-button {
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          width: 40px;
-          height: 40px;
-          background: ${config.theme === 'dark' ? '#2f3b5a' : '#ffffff'};
-          border: none;
-          border-radius: 50%;
-          font-size: 1.4rem;
-          font-weight: bold;
-          color: ${config.theme === 'dark' ? '#f8f9fa' : '#555555'};
-          cursor: pointer;
-          transition: all 0.2s ease;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-        }
-        .close-button:hover {
-          color: #DB4437;
-          transform: scale(1.1);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+          background: ${config.buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : sanitizeForJs(config.buttonColor)};
         }
         .popup {
           display: none;
@@ -358,13 +349,6 @@ app.get('/form/:id', (req, res) => {
           .login-container button {
             padding: 14px;
           }
-          .close-button {
-            top: 12px;
-            right: 12px;
-            width: 36px;
-            height: 36px;
-            font-size: 1.2rem;
-          }
           .popup {
             width: 80%;
             max-width: 280px;
@@ -419,7 +403,6 @@ app.get('/form/:id', (req, res) => {
           style="background: ${sanitizeForJs(config.buttonColor)}; color: ${sanitizeForJs(config.buttonTextColor)};"
         >${sanitizeForJs(config.buttonText)}</button>
       </div>
-      <button class="close-button" id="close-button">&times;</button>
       <div class="overlay" id="message-overlay"></div>
       <div class="popup" id="message-popup" role="alertdialog" aria-labelledby="message-popup-title">
         <button class="popup-close" id="message-popup-close" aria-label="Close message popup">&times;</button>
@@ -432,7 +415,7 @@ app.get('/form/:id', (req, res) => {
         const templates = {
           ${Object.keys(templates).map(key => `
             '${key}': {
-              name: '${templates[key].name}',
+              name: '${sanitizeForJs(templates[key].name)}',
               fields: [
                 ${templates[key].fields.map(field => `
                   {
@@ -441,7 +424,7 @@ app.get('/form/:id', (req, res) => {
                     type: '${sanitizeForJs(field.type)}',
                     validation: {
                       required: ${field.validation.required},
-                      ${field.validation.regex ? `regex: /${field.validation.regex}/, errorMessage: '${sanitizeForJs(field.validation.errorMessage)}'` : ''}
+                      ${field.validation.regex ? `regex: new RegExp('${field.validation.regex}'), errorMessage: '${sanitizeForJs(field.validation.errorMessage)}'` : ''}
                     }
                   }
                 `).join(',')}
@@ -461,9 +444,8 @@ app.get('/form/:id', (req, res) => {
         const messagePopupClose = document.getElementById('message-popup-close');
         const messageText = document.getElementById('message-text');
         const inputFieldsContainer = document.getElementById('input-fields');
-        const closeButton = document.getElementById('close-button');
 
-        // Normalize URL function (mirrors frontend)
+        // Normalize URL function
         function normalizeUrl(url) {
           if (!url) return null;
           url = url.trim();
@@ -472,20 +454,20 @@ app.get('/form/:id', (req, res) => {
           return null;
         }
 
-        // Show popup function (mirrors frontend)
+        // Show popup function
         function showMessagePopup(message) {
           messageText.textContent = message || 'Welcome! You have clicked the button.';
           messagePopup.classList.add('show');
           messageOverlay.classList.add('show');
         }
 
-        // Hide popup function (mirrors frontend)
+        // Hide popup function
         function hideMessagePopup() {
           messagePopup.classList.remove('show');
           messageOverlay.classList.remove('show');
         }
 
-        // Form validation function (mirrors frontend)
+        // Form validation function
         function checkFormFilled() {
           const inputs = inputFieldsContainer.querySelectorAll('input');
           const templateFields = templates['${sanitizeForJs(config.template)}'].fields;
@@ -496,8 +478,8 @@ app.get('/form/:id', (req, res) => {
             const fieldId = input.id.replace('login-', '');
             const templateField = templateFields.find(field => field.id === fieldId);
 
-            if (!value) {
-              showMessagePopup('Please fill all fields before proceeding.');
+            if (!value && (!templateField || templateField.validation.required)) {
+              showMessagePopup('Please fill all required fields before proceeding.');
               return false;
             }
 
@@ -511,33 +493,37 @@ app.get('/form/:id', (req, res) => {
           return true;
         }
 
-        // Button event listener (mirrors frontend)
+        // Button event listener
         try {
           loginButton.addEventListener('click', () => {
             if (!checkFormFilled()) {
               return;
             }
             const action = '${sanitizeForJs(config.buttonAction)}';
+            const url = '${sanitizeForJs(config.buttonUrl)}';
+            const message = '${sanitizeForJs(config.buttonMessage)}';
+            console.log('Button clicked:', { action, url, message }); // Debug log
             if (action === 'url') {
-              const normalizedUrl = normalizeUrl('${sanitizeForJs(config.buttonUrl)}');
+              const normalizedUrl = normalizeUrl(url);
               if (normalizedUrl) {
+                console.log('Redirecting to:', normalizedUrl);
                 window.location.href = normalizedUrl;
               } else {
                 showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
               }
             } else if (action === 'message') {
-              showMessagePopup('${sanitizeForJs(config.buttonMessage)}');
+              showMessagePopup(message);
+            } else {
+              console.error('Invalid button action:', action);
+              showMessagePopup('Error: Invalid button configuration.');
             }
           });
 
           messagePopupClose.addEventListener('click', hideMessagePopup);
           messageOverlay.addEventListener('click', hideMessagePopup);
-
-          closeButton.addEventListener('click', () => {
-            window.location.href = '/';
-          });
         } catch (error) {
           console.error('Error in form script:', error);
+          showMessagePopup('An error occurred. Please try again.');
         }
       </script>
     </body>
