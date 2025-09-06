@@ -7,15 +7,15 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors()); // Enable CORS for frontend requests
+app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static('public')); // Optional: for static files
+app.use(express.static('public'));
 app.set('view engine', 'ejs');
 
-// In-memory storage for form configurations (replace with database in production)
+// In-memory storage for form configurations
 const formConfigs = {};
 
-// EJS template as a string
+// EJS template mirroring frontend's saved-mode login-container
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -29,12 +29,14 @@ const formTemplate = `
       font-family: 'Inter', sans-serif;
       background: <%= theme === 'dark' ? '#1a1f2e' : '#f8f9fa' %>;
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
       min-height: 100vh;
       margin: 0;
-      padding: 40px 20px;
+      padding: 40px 20px 20px;
       box-sizing: border-box;
+      transition: background 0.3s ease;
     }
     .login-container {
       background: <%= theme === 'dark' ? '#2f3b5a' : 'white' %>;
@@ -43,8 +45,15 @@ const formTemplate = `
       box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 320px;
       min-height: <%= minHeight %>;
+      height: auto;
       text-align: center;
       transition: transform 0.3s ease, box-shadow 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 1;
+      margin: 0 auto;
     }
     .login-container:hover {
       transform: scale(1.02);
@@ -58,8 +67,23 @@ const formTemplate = `
     }
     .login-container p {
       font-size: 0.9rem;
+      font-weight: 400;
       color: <%= subheaderColor %>;
       margin: 0 0 10px;
+    }
+    .login-container span {
+      cursor: default;
+      pointer-events: none;
+      position: relative;
+      display: inline-block;
+      margin: 0;
+      letter-spacing: 0.5px;
+    }
+    .login-container span.space {
+      margin-right: 4px;
+      letter-spacing: 0;
+      width: 4px;
+      display: inline-block;
     }
     .login-container input, .login-container button {
       width: 100%;
@@ -68,6 +92,7 @@ const formTemplate = `
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
+      transition: all 0.2s ease;
     }
     .login-container input {
       border: none;
@@ -77,10 +102,15 @@ const formTemplate = `
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
+      opacity: 1;
     }
     .login-container input:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.3);
+      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
+    }
+    .login-container input:not(:placeholder-shown) {
+      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
     .login-container button {
       background: <%= buttonColor %>;
@@ -101,20 +131,26 @@ const formTemplate = `
       position: fixed;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%) scale(0.8);
       background: <%= theme === 'dark' ? '#2f3b5a' : '#ffffff' %>;
       padding: 20px;
       border-radius: 12px;
       box-shadow: 0 6px 20px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
       z-index: 1000;
+      text-align: center;
       max-width: 300px;
       width: 90%;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      border: 1px solid rgba(0, 183, 255, <%= theme === 'dark' ? '0.2' : '0.1' %>);
     }
     .popup.show {
       display: block;
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
     }
     .popup h4 {
       font-size: 1rem;
+      font-weight: 600;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       margin-bottom: 12px;
     }
@@ -122,6 +158,7 @@ const formTemplate = `
       font-size: 0.85rem;
       color: <%= theme === 'dark' ? '#d1d5db' : '#555555' %>;
       margin-bottom: 12px;
+      line-height: 1.4;
     }
     .popup-close {
       position: absolute;
@@ -132,6 +169,7 @@ const formTemplate = `
       font-size: 0.85rem;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#555555' %>;
       cursor: pointer;
+      transition: color 0.2s ease;
     }
     .popup-close:hover {
       color: #00b7ff;
@@ -145,27 +183,61 @@ const formTemplate = `
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
       z-index: 999;
+      backdrop-filter: blur(2px);
+      transition: opacity 0.3s ease;
     }
     .overlay.show {
       display: block;
+      opacity: 1;
     }
     @media (max-width: 768px) {
+      body {
+        padding: 30px 16px 16px;
+      }
       .login-container {
         width: 100%;
         max-width: 300px;
         padding: 16px;
       }
-      .login-container h2 { font-size: 1.6rem; }
-      .login-container p { font-size: 0.8rem; }
-      .login-container input, .login-container button { padding: 12px; font-size: 0.9rem; }
-      .login-container button { padding: 14px; }
-      .popup { max-width: 280px; }
+      .login-container h2 {
+        font-size: 1.6rem;
+      }
+      .login-container p {
+        font-size: 0.8rem;
+      }
+      .login-container input, .login-container button {
+        padding: 12px;
+        font-size: 0.9rem;
+      }
+      .login-container button {
+        padding: 14px;
+      }
+      .popup {
+        width: 80%;
+        max-width: 280px;
+        padding: 16px;
+      }
     }
     @media (max-width: 480px) {
-      .login-container { max-width: 280px; }
-      .login-container h2 { font-size: 1.4rem; }
-      .login-container input, .login-container button { font-size: 0.85rem; padding: 10px; }
-      .popup { max-width: 260px; }
+      .login-container {
+        max-width: 280px;
+      }
+      .login-container h2 {
+        font-size: 1.4rem;
+      }
+      .login-container p {
+        font-size: 0.8rem;
+      }
+      .login-container input, .login-container button {
+        font-size: 0.85rem;
+        padding: 10px;
+      }
+      .login-container button {
+        padding: 12px;
+      }
+      .popup {
+        max-width: 260px;
+      }
     }
   </style>
 </head>
@@ -181,9 +253,9 @@ const formTemplate = `
     <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;"><%= buttonText %></button>
   </div>
   <div class="overlay" id="message-overlay"></div>
-  <div class="popup" id="message-popup">
-    <button class="popup-close" id="message-popup-close">&times;</button>
-    <h4>Message</h4>
+  <div class="popup" id="message-popup" role="alertdialog" aria-labelledby="message-popup-title">
+    <button class="popup-close" id="message-popup-close" aria-label="Close message popup">&times;</button>
+    <h4 id="message-popup-title">Message</h4>
     <p id="message-text"></p>
   </div>
 
@@ -227,7 +299,7 @@ const formTemplate = `
         const templateField = templateFields.find(field => field.id === fieldId);
 
         if (!value && (!templateField || templateField.validation.required)) {
-          showMessagePopup('Please fill all required fields.');
+          showMessagePopup('Please fill all required fields before proceeding.');
           return false;
         }
 
@@ -326,14 +398,14 @@ app.post('/create', (req, res) => {
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
       subheaderText: req.body.subheaderText || 'Fill the form',
-      subheaderColor: req.body.subheaderColor || '#555555',
+      subheaderColor: req.body.subheaderColor || (req.body.theme === 'dark' ? '#d1d5db' : '#555555'),
       placeholders: Array.isArray(req.body.placeholders) ? req.body.placeholders.map(p => ({
         id: sanitizeForJs(p.id),
         placeholder: sanitizeForJs(p.placeholder)
       })) : [],
-      borderShadow: req.body.borderShadow || '0 0 0 2px #000000',
+      borderShadow: req.body.borderShadow || (req.body.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000'),
       buttonColor: req.body.buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)',
-      buttonTextColor: req.body.buttonTextColor || '#ffffff',
+      buttonTextColor: req.body.buttonTextColor || (req.body.buttonColor === '#ffffff' ? '#000000' : '#ffffff'),
       buttonText: req.body.buttonText || 'Sign In',
       buttonAction: validActions.includes(req.body.buttonAction) ? req.body.buttonAction : 'url',
       buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
@@ -341,7 +413,6 @@ app.post('/create', (req, res) => {
       theme: req.body.theme === 'dark' ? 'dark' : 'light'
     };
 
-    // Validate button configuration
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
       console.error('Invalid URL provided:', config.buttonUrl);
       return res.status(400).json({ error: 'Invalid URL provided' });
