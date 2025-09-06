@@ -1,8 +1,6 @@
 {
   "name": "form-backend",
   "version": "1.0.0",
-  "description": "Backend for a customizable form application with button functionality",
-  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
@@ -15,10 +13,5 @@
   },
   "devDependencies": {
     "nodemon": "^2.0.15"
-  },
-  "author": "",
-  "license": "ISC",
-  "engines": {
-    "node": ">=14.0.0"
   }
 }
