@@ -15,7 +15,7 @@ app.set('view engine', 'ejs');
 // In-memory storage for form configurations
 const formConfigs = {};
 
-// EJS template mirroring frontend's saved-mode login-container
+// EJS template with improved spacing for a modern look
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -40,7 +40,7 @@ const formTemplate = `
     }
     .login-container {
       background: <%= theme === 'dark' ? '#2f3b5a' : 'white' %>;
-      padding: 20px;
+      padding: 24px;
       border-radius: 16px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 320px;
@@ -52,6 +52,7 @@ const formTemplate = `
       flex-direction: column;
       justify-content: center;
       align-items: center;
+      gap: 16px;
       opacity: 1;
       margin: 0 auto;
     }
@@ -63,13 +64,13 @@ const formTemplate = `
       font-size: 1.8rem;
       font-weight: 700;
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
-      margin: 0 0 10px;
+      margin: -4px 0 16px;
     }
     .login-container p {
       font-size: 0.9rem;
       font-weight: 400;
       color: <%= subheaderColor %>;
-      margin: 0 0 10px;
+      margin: 0 0 16px;
     }
     .login-container span {
       cursor: default;
@@ -85,16 +86,14 @@ const formTemplate = `
       width: 4px;
       display: inline-block;
     }
-    .login-container input, .login-container button {
+    .login-container input {
       width: 100%;
       padding: 14px;
-      margin: 10px 0;
+      margin: 8px 0;
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
-    }
-    .login-container input {
       border: none;
       box-shadow: <%= borderShadow %>;
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
@@ -113,13 +112,19 @@ const formTemplate = `
       background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
     .login-container button {
+      width: 100%;
+      padding: 16px;
+      margin: 20px 0 0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
       background: <%= buttonColor %>;
       color: <%= buttonTextColor %>;
       border: none;
       cursor: pointer;
       font-weight: 500;
       box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3);
-      padding: 16px;
     }
     .login-container button:hover {
       transform: translateY(-2px);
@@ -197,7 +202,7 @@ const formTemplate = `
       .login-container {
         width: 100%;
         max-width: 300px;
-        padding: 16px;
+        padding: 20px;
       }
       .login-container h2 {
         font-size: 1.6rem;
@@ -211,6 +216,7 @@ const formTemplate = `
       }
       .login-container button {
         padding: 14px;
+        margin: 16px 0 0;
       }
       .popup {
         width: 80%;
@@ -234,6 +240,7 @@ const formTemplate = `
       }
       .login-container button {
         padding: 12px;
+        margin: 12px 0 0;
       }
       .popup {
         max-width: 260px;
