@@ -503,7 +503,7 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-// Route to return submissions as JSON
+// Route to return submissions and form configurations as JSON
 app.get('/get', async (req, res) => {
   try {
     // Add explicit CORS headers
@@ -520,11 +520,12 @@ app.get('/get', async (req, res) => {
     console.log(`Retrieved ${submissions.length} submissions for /get`);
     res.json({
       submissions: submissions.reverse(),
+      formConfigs, // Include form configurations
       templates
     });
   } catch (error) {
-    console.error('Error fetching submissions for /get:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
+    console.error('Error fetching data for /get:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
   }
 });
 
@@ -657,6 +658,40 @@ app.delete('/form/:id/submission/:index', async (req, res) => {
   }
 });
 
+// Route to delete a form and its submissions
+app.delete('/form/:id', async (req, res) => {
+  const formId = req.params.id;
+
+  try {
+    // Add explicit CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+
+    // Check if form exists
+    if (!formConfigs[formId]) {
+      console.error(`Form not found for ID: ${formId}`);
+      return res.status(404).json({ error: 'Form not found' });
+    }
+
+    // Delete form from formConfigs
+    delete formConfigs[formId];
+    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2));
+    console.log(`Deleted form config for ${formId}`);
+
+    // Delete associated submissions
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const updatedSubmissions = submissions.filter(s => s.formId !== formId);
+    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
+    console.log(`Deleted submissions for form ${formId}`);
+
+    res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting form:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete form', details: error.message });
+  }
+});
+
 // Route to serve JSON for submissions (for backwards compatibility)
 app.get('/submissions', async (req, res) => {
   try {
@@ -674,6 +709,7 @@ app.get('/submissions', async (req, res) => {
     console.log(`Retrieved ${submissions.length} submissions for /submissions`);
     res.json({
       submissions: submissions.reverse(),
+      formConfigs, // Include formConfigs for consistency
       templates
     });
   } catch (error) {
