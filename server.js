@@ -72,14 +72,27 @@ let formConfigs = {};
   }
 })();
 
-// Middleware
-app.use(cors());
+// Middleware - Updated CORS configuration
+app.use(cors({
+  origin: ['http://localhost:3000', 'https://plexzora.onrender.com', '*'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+  credentials: false
+}));
 app.use(bodyParser.json());
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// EJS template for live form (unchanged)
+// Handle preflight requests
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+  res.sendStatus(200);
+});
+
+// EJS template for live form
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -582,9 +595,14 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
-// Route to serve JSON for submissions (for submissions.html)
+// Route to serve JSON for submissions (for submissions.html) - WITH CORS HEADERS
 app.get('/submissions', async (req, res) => {
   try {
+    // Add explicit CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+    
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const templates = {
       'sign-in': { name: 'Sign In Form', fields: [{ id: 'email' }, { id: 'password' }] },
@@ -711,5 +729,8 @@ app.get('/form/:id', (req, res) => {
 
 // Start the server
 app.listen(port, () => {
-  console.log(`Server running on port ${port} at ${new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' })}`);
+  console.log(`Server is running on port ${port}`);
+}).on('error', (error) => {
+  console.error('Server startup error:', error.message, error.stack);
+  process.exit(1); // Exit if server fails to start
 });
