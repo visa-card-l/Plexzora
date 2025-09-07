@@ -485,7 +485,7 @@ function generateShortCode(length = 6) {
     code += characters.charAt(Math.floor(Math.random() * characters.length));
   }
   if (formConfigs[code]) {
-    return generateShortCode(length);
+    return generateShortCode(length); // Ensure uniqueness
   }
   return code;
 }
@@ -552,10 +552,10 @@ app.post('/create', async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
     const templateId = req.body.template || 'sign-in';
-    const formId = `${templateId}-${generateShortCode()}`;
+    const formId = generateShortCode(); // Use short code only
     const validActions = ['url', 'message'];
     const config = {
-      template: templateId,
+      template: templateId, // Store templateId in config
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
       subheaderText: req.body.subheaderText || 'Fill the form',
@@ -591,7 +591,7 @@ app.post('/create', async (req, res) => {
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
     console.log('Generated URL:', url);
-    res.status(200).json({ url });
+    res.status(200).json({ url, formId }); // Return formId for frontend use
   } catch (error) {
     console.error('Error in /create:', error.message, error.stack);
     res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
