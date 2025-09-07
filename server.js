@@ -20,6 +20,7 @@ async function ensureDataDir() {
     console.log(`Data directory ensured: ${DATA_DIR}`);
   } catch (err) {
     console.error('Error creating data directory:', err.message, err.stack);
+    throw err; // Stop if directory creation fails
   }
 }
 
@@ -54,15 +55,21 @@ async function saveFormConfigs() {
     console.log('Saved formConfigs to file');
   } catch (err) {
     console.error('Error saving formConfigs:', err.message, err.stack);
+    throw err; // Stop if save fails
   }
 }
 
 // Initialize storage
 let formConfigs = {};
 (async () => {
-  await ensureDataDir();
-  await initializeSubmissionsFile();
-  await initializeFormConfigsFile();
+  try {
+    await ensureDataDir();
+    await initializeSubmissionsFile();
+    await initializeFormConfigsFile();
+  } catch (err) {
+    console.error('Initialization failed:', err.message, err.stack);
+    process.exit(1); // Exit if initialization fails
+  }
 })();
 
 // Middleware
@@ -72,7 +79,7 @@ app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// EJS template for live form (unchanged from your original)
+// EJS template for live form (unchanged)
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -487,10 +494,11 @@ function sanitizeForJs(str) {
 app.post('/create', async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
-    const formId = generateShortCode();
+    const templateId = req.body.template || 'sign-in';
+    const formId = `${templateId}-${generateShortCode()}`;
     const validActions = ['url', 'message'];
     const config = {
-      template: req.body.template || 'sign-in',
+      template: templateId,
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
       subheaderText: req.body.subheaderText || 'Fill the form',
@@ -581,28 +589,6 @@ app.get('/submissions', async (req, res) => {
   } catch (error) {
     console.error('Error fetching submissions:', error.message, error.stack);
     res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
-  }
-});
-
-// Optional: Admin view for server-rendered submissions
-app.get('/admin/submissions', async (req, res) => {
-  try {
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const templates = {
-      'sign-in': { name: 'Sign In Form', fields: [{ id: 'email' }, { id: 'password' }] },
-      'contact': { name: 'Contact Form', fields: [{ id: 'phone' }, { id: 'email' }] },
-      'payment-checkout': { name: 'Payment Checkout Form', fields: [{ id: 'card-number' }, { id: 'exp-date' }, { id: 'cvv' }] }
-    };
-    console.log(`Rendering ${submissions.length} submissions for /admin/submissions`);
-    res.render('submissions', {
-      submissions: submissions.reverse(),
-      templates,
-      theme: 'light',
-      sanitizeForJs
-    });
-  } catch (error) {
-    console.error('Error rendering admin submissions:', error.message, error.stack);
-    res.status(500).send('Error rendering submissions');
   }
 });
 
