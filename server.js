@@ -610,6 +610,53 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
+// Route to delete a specific submission
+app.delete('/form/:id/submission/:index', async (req, res) => {
+  const formId = req.params.id;
+  const index = parseInt(req.params.index, 10);
+
+  try {
+    // Add explicit CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+
+    // Read submissions
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+
+    // Filter submissions for the given formId
+    const formSubmissions = submissions.filter(s => s.formId === formId);
+
+    // Check if index is valid
+    if (index < 0 || index >= formSubmissions.length) {
+      console.error(`Invalid submission index: ${index} for form ${formId}`);
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    // Find the global index of the submission to delete
+    const globalIndex = submissions.findIndex(
+      (s, i) => s.formId === formId && submissions.filter(s2 => s2.formId === formId).indexOf(s) === index
+    );
+
+    if (globalIndex === -1) {
+      console.error(`Submission not found for form ${formId} at index ${index}`);
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    // Remove the submission
+    submissions.splice(globalIndex, 1);
+
+    // Save updated submissions
+    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
+    console.log(`Deleted submission at index ${index} for form ${formId}`);
+
+    res.status(200).json({ message: 'Submission deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting submission:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete submission', details: error.message });
+  }
+});
+
 // Route to serve JSON for submissions (for backwards compatibility)
 app.get('/submissions', async (req, res) => {
   try {
