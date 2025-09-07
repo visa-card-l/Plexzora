@@ -490,6 +490,16 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
+// Route to serve the submissions.html page
+app.get('/get', (req, res) => {
+  try {
+    res.sendFile(path.join(__dirname, 'public', 'submissions.html'));
+  } catch (error) {
+    console.error('Error serving submissions.html:', error.message, error.stack);
+    res.status(500).send('Error loading submissions page');
+  }
+});
+
 // Route to save form configuration and generate shareable link
 app.post('/create', async (req, res) => {
   try {
