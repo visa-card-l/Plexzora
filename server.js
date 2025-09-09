@@ -4,14 +4,19 @@ const ejs = require('ejs');
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+require('dotenv').config(); // Load environment variables
 
 const app = express();
 const port = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here'; // Fallback for local dev
 
 // Use persistent path for Render (set DATA_DIR=/data in Render env vars)
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const submissionsFile = path.join(DATA_DIR, 'submissions.json');
 const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
+const usersFile = path.join(DATA_DIR, 'users.json');
 
 // Ensure data directory exists
 async function ensureDataDir() {
@@ -20,7 +25,7 @@ async function ensureDataDir() {
     console.log(`Data directory ensured: ${DATA_DIR}`);
   } catch (err) {
     console.error('Error creating data directory:', err.message, err.stack);
-    throw err; // Stop if directory creation fails
+    throw err;
   }
 }
 
@@ -55,7 +60,58 @@ async function saveFormConfigs() {
     console.log('Saved formConfigs to file');
   } catch (err) {
     console.error('Error saving formConfigs:', err.message, err.stack);
-    throw err; // Stop if save fails
+    throw err;
+  }
+}
+
+// Initialize users file
+async function initializeUsersFile() {
+  try {
+    await fs.access(usersFile);
+    console.log(`Users file exists: ${usersFile}`);
+  } catch {
+    await fs.writeFile(usersFile, JSON.stringify([]));
+    console.log('Created users.json');
+  }
+}
+
+// Save users to file
+async function saveUsers(users) {
+  try {
+    await fs.writeFile(usersFile, JSON.stringify(users, null, 2));
+    console.log('Saved users to file');
+  } catch (err) {
+    console.error('Error saving users:', err.message, err.stack);
+    throw err;
+  }
+}
+
+// Load users from file
+async function loadUsers() {
+  try {
+    const data = await fs.readFile(usersFile, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error('Error loading users:', err.message);
+    return [];
+  }
+}
+
+// JWT verification middleware
+function verifyToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded; // Store user data in request
+    next();
+  } catch (error) {
+    console.error('Token verification error:', error.message);
+    res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
@@ -66,9 +122,10 @@ let formConfigs = {};
     await ensureDataDir();
     await initializeSubmissionsFile();
     await initializeFormConfigsFile();
+    await initializeUsersFile();
   } catch (err) {
     console.error('Initialization failed:', err.message, err.stack);
-    process.exit(1); // Exit if initialization fails
+    process.exit(1);
   }
 })();
 
@@ -413,7 +470,10 @@ const formTemplate = `
       try {
         const response = await fetch('/form/<%= formId %>/submit', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + localStorage.getItem('token') // Include JWT
+          },
           body: JSON.stringify(formData)
         });
         const result = await response.json();
@@ -485,7 +545,7 @@ function generateShortCode(length = 6) {
     code += characters.charAt(Math.floor(Math.random() * characters.length));
   }
   if (formConfigs[code]) {
-    return generateShortCode(length); // Ensure uniqueness
+    return generateShortCode(length);
   }
   return code;
 }
@@ -503,13 +563,121 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-// Route to return submissions and form configurations as JSON
-app.get('/get', async (req, res) => {
+// Auth Route: Signup
+app.post('/signup', async (req, res) => {
   try {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
-    
+    const { username, email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const users = await loadUsers();
+    const existingUser = users.find(u => u.email === email);
+    if (existingUser) {
+      return res.status(400).json({ error: 'User already exists with this email' });
+    }
+
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const newUser = {
+      id: Date.now().toString(),
+      username: username || '',
+      email,
+      password: hashedPassword,
+      createdAt: new Date().toISOString()
+    };
+
+    users.push(newUser);
+    await saveUsers(users);
+
+    const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '1h' });
+    res.status(201).json({ message: 'User created successfully', token });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ error: 'Signup failed' });
+  }
+});
+
+// Auth Route: Login
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const users = await loadUsers();
+    const user = users.find(u => u.email === email);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
+    res.json({ message: 'Login successful', token });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Auth Route: Forgot Password (check if email exists)
+app.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const users = await loadUsers();
+    const user = users.find(u => u.email === email);
+    if (!user) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    res.json({ message: 'Email found, proceed to reset' });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Forgot password check failed' });
+  }
+});
+
+// Auth Route: Reset Password (update if email exists)
+app.post('/reset-password', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and new password are required' });
+    }
+
+    const users = await loadUsers();
+    const userIndex = users.findIndex(u => u.email === email);
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    users[userIndex].password = hashedPassword;
+    users[userIndex].updatedAt = new Date().toISOString();
+
+    await saveUsers(users);
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Reset password failed' });
+  }
+});
+
+// Protected Routes
+app.get('/get', verifyToken, async (req, res) => {
+  try {
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const templates = {
       'sign-in': {
@@ -547,15 +715,14 @@ app.get('/get', async (req, res) => {
   }
 });
 
-// Route to save form configuration and generate shareable link
-app.post('/create', async (req, res) => {
+app.post('/create', verifyToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
     const templateId = req.body.template || 'sign-in';
-    const formId = generateShortCode(); // Use short code only
+    const formId = generateShortCode();
     const validActions = ['url', 'message'];
     const config = {
-      template: templateId, // Store templateId in config
+      template: templateId,
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
       subheaderText: req.body.subheaderText || 'Fill the form',
@@ -591,15 +758,14 @@ app.post('/create', async (req, res) => {
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
     console.log('Generated URL:', url);
-    res.status(200).json({ url, formId }); // Return formId for frontend use
+    res.status(200).json({ url, formId });
   } catch (error) {
     console.error('Error in /create:', error.message, error.stack);
     res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
   }
 });
 
-// Route to handle form submissions
-app.post('/form/:id/submit', async (req, res) => {
+app.post('/form/:id/submit', verifyToken, async (req, res) => {
   const formId = req.params.id;
   if (!formConfigs[formId]) {
     console.error(`Form not found for ID: ${formId}`);
@@ -635,7 +801,6 @@ app.post('/form/:id/submit', async (req, res) => {
     };
     const template = templates[config.template] || templates['sign-in'];
 
-    // Map submitted data to user-defined placeholders
     const mappedData = {};
     Object.entries(formData).forEach(([fieldId, value]) => {
       const customField = config.placeholders.find(p => p.id === fieldId);
@@ -664,16 +829,11 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
-// Route to delete a specific submission
-app.delete('/form/:id/submission/:index', async (req, res) => {
+app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
 
   try {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
-
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const formSubmissions = submissions.filter(s => s.formId === formId);
 
@@ -702,15 +862,10 @@ app.delete('/form/:id/submission/:index', async (req, res) => {
   }
 });
 
-// Route to delete a form and its submissions
-app.delete('/form/:id', async (req, res) => {
+app.delete('/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
 
   try {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
-
     if (!formConfigs[formId]) {
       console.error(`Form not found for ID: ${formId}`);
       return res.status(404).json({ error: 'Form not found' });
@@ -731,13 +886,8 @@ app.delete('/form/:id', async (req, res) => {
   }
 });
 
-// Route to serve JSON for submissions (for backwards compatibility)
-app.get('/submissions', async (req, res) => {
+app.get('/submissions', verifyToken, async (req, res) => {
   try {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
-    
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const templates = {
       'sign-in': {
@@ -775,8 +925,7 @@ app.get('/submissions', async (req, res) => {
   }
 });
 
-// Route to serve the live form
-app.get('/form/:id', (req, res) => {
+app.get('/form/:id', verifyToken, (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   if (!config) {
@@ -887,5 +1036,5 @@ app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 }).on('error', (error) => {
   console.error('Server startup error:', error.message, error.stack);
-  process.exit(1); // Exit if server fails to start
+  process.exit(1);
 });
