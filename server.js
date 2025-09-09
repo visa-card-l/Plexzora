@@ -97,6 +97,12 @@ async function loadUsers() {
   }
 }
 
+// Load user by ID
+async function loadUserById(userId) {
+  const users = await loadUsers();
+  return users.find(u => u.id === userId);
+}
+
 // JWT verification middleware
 function verifyToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -149,7 +155,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// EJS template for live form
+// EJS template for live form (unchanged)
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -563,6 +569,26 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
+// Auth Route: Get current user info
+app.get('/user', verifyToken, async (req, res) => {
+  try {
+    const user = await loadUserById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Return user info without sensitive data
+    const { id, username, email, createdAt } = user;
+    res.json({ 
+      user: { id, username, email, createdAt },
+      message: 'User info retrieved successfully' 
+    });
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    res.status(500).json({ error: 'Failed to fetch user info' });
+  }
+});
+
 // Auth Route: Signup
 app.post('/signup', async (req, res) => {
   try {
@@ -675,10 +701,23 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-// Protected Routes
+// Protected Routes - UPDATED WITH USER ISOLATION
 app.get('/get', verifyToken, async (req, res) => {
   try {
+    const userId = req.user.userId;
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    
+    // Filter submissions by user
+    const userSubmissions = submissions.filter(s => s.userId === userId);
+    
+    // Filter form configs by user
+    const userFormConfigs = {};
+    Object.entries(formConfigs).forEach(([formId, config]) => {
+      if (config.userId === userId) {
+        userFormConfigs[formId] = config;
+      }
+    });
+
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
@@ -703,11 +742,13 @@ app.get('/get', verifyToken, async (req, res) => {
         ]
       }
     };
-    console.log(`Retrieved ${submissions.length} submissions for /get`);
+    
+    console.log(`Retrieved ${userSubmissions.length} submissions and ${Object.keys(userFormConfigs).length} forms for user ${userId}`);
     res.json({
-      submissions: submissions.reverse(),
-      formConfigs,
-      templates
+      submissions: userSubmissions.reverse(),
+      formConfigs: userFormConfigs,
+      templates,
+      userId
     });
   } catch (error) {
     console.error('Error fetching data for /get:', error.message, error.stack);
@@ -718,10 +759,12 @@ app.get('/get', verifyToken, async (req, res) => {
 app.post('/create', verifyToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
+    const userId = req.user.userId;
     const templateId = req.body.template || 'sign-in';
     const formId = generateShortCode();
     const validActions = ['url', 'message'];
     const config = {
+      userId, // Associate form with user
       template: templateId,
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
@@ -751,7 +794,7 @@ app.post('/create', verifyToken, async (req, res) => {
     }
 
     formConfigs[formId] = config;
-    console.log(`Stored form config for ${formId}:`, config);
+    console.log(`Stored form config for ${formId} for user ${userId}:`, config);
     await saveFormConfigs();
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
@@ -767,9 +810,17 @@ app.post('/create', verifyToken, async (req, res) => {
 
 app.post('/form/:id/submit', verifyToken, async (req, res) => {
   const formId = req.params.id;
+  const userId = req.user.userId;
+  
+  // Check if form exists and belongs to the user
   if (!formConfigs[formId]) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).json({ error: 'Form not found' });
+  }
+  
+  if (formConfigs[formId].userId !== userId) {
+    console.error(`User ${userId} does not have access to form ${formId}`);
+    return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
   }
 
   try {
@@ -810,18 +861,19 @@ app.post('/form/:id/submit', verifyToken, async (req, res) => {
     });
 
     const submission = {
+      userId, // Associate submission with user
       formId,
       timestamp: new Date().toISOString(),
       data: mappedData
     };
 
-    console.log(`Attempting to save submission for ${formId}:`, submission);
+    console.log(`Attempting to save submission for ${formId} by user ${userId}:`, submission);
 
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     submissions.push(submission);
     await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
 
-    console.log(`Submission saved successfully for form ${formId}`);
+    console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
     console.error('Error saving submission:', error.message, error.stack);
@@ -832,28 +884,38 @@ app.post('/form/:id/submit', verifyToken, async (req, res) => {
 app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
+  const userId = req.user.userId;
 
   try {
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const formSubmissions = submissions.filter(s => s.formId === formId);
+    // Check if form exists and belongs to user
+    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
+      return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
+    }
 
-    if (index < 0 || index >= formSubmissions.length) {
-      console.error(`Invalid submission index: ${index} for form ${formId}`);
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    // Filter submissions by user and form
+    const userFormSubmissions = submissions.filter(s => s.userId === userId && s.formId === formId);
+
+    if (index < 0 || index >= userFormSubmissions.length) {
+      console.error(`Invalid submission index: ${index} for form ${formId} by user ${userId}`);
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    const globalIndex = submissions.findIndex(
-      (s, i) => s.formId === formId && submissions.filter(s2 => s2.formId === formId).indexOf(s) === index
+    // Find the global index of this submission
+    const submissionToDelete = userFormSubmissions[index];
+    const globalIndex = submissions.findIndex(s => 
+      s.userId === userId && s.formId === formId && s.timestamp === submissionToDelete.timestamp
     );
 
     if (globalIndex === -1) {
-      console.error(`Submission not found for form ${formId} at index ${index}`);
+      console.error(`Submission not found for form ${formId} at index ${index} by user ${userId}`);
       return res.status(404).json({ error: 'Submission not found' });
     }
 
     submissions.splice(globalIndex, 1);
     await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
-    console.log(`Deleted submission at index ${index} for form ${formId}`);
+    console.log(`Deleted submission at index ${index} for form ${formId} by user ${userId}`);
 
     res.status(200).json({ message: 'Submission deleted successfully' });
   } catch (error) {
@@ -864,20 +926,25 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
 
 app.delete('/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
+  const userId = req.user.userId;
 
   try {
-    if (!formConfigs[formId]) {
-      console.error(`Form not found for ID: ${formId}`);
-      return res.status(404).json({ error: 'Form not found' });
+    // Check if form exists and belongs to user
+    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
+      return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
     delete formConfigs[formId];
     await saveFormConfigs();
 
+    // Delete only user's submissions for this form
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const updatedSubmissions = submissions.filter(s => s.formId !== formId);
+    const updatedSubmissions = submissions.filter(s => 
+      !(s.userId === userId && s.formId === formId)
+    );
     await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    console.log(`Deleted form ${formId} and its submissions`);
+    console.log(`Deleted form ${formId} and its submissions for user ${userId}`);
 
     res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
   } catch (error) {
@@ -888,7 +955,12 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
 
 app.get('/submissions', verifyToken, async (req, res) => {
   try {
+    const userId = req.user.userId;
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    
+    // Filter submissions by user
+    const userSubmissions = submissions.filter(s => s.userId === userId);
+
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
@@ -913,11 +985,12 @@ app.get('/submissions', verifyToken, async (req, res) => {
         ]
       }
     };
-    console.log(`Retrieved ${submissions.length} submissions for /submissions`);
+    
+    console.log(`Retrieved ${userSubmissions.length} submissions for user ${userId}`);
     res.json({
-      submissions: submissions.reverse(),
-      formConfigs,
-      templates
+      submissions: userSubmissions.reverse(),
+      templates,
+      userId
     });
   } catch (error) {
     console.error('Error fetching submissions:', error.message, error.stack);
@@ -927,9 +1000,12 @@ app.get('/submissions', verifyToken, async (req, res) => {
 
 app.get('/form/:id', verifyToken, (req, res) => {
   const formId = req.params.id;
+  const userId = req.user.userId;
   const config = formConfigs[formId];
-  if (!config) {
-    console.error(`Form not found for ID: ${formId}`);
+  
+  // Check if form exists and belongs to user
+  if (!config || config.userId !== userId) {
+    console.error(`User ${userId} does not have access to form ${formId}`);
     return res.status(404).send('Form not found');
   }
 
