@@ -755,6 +755,7 @@ app.get('/get', verifyToken, async (req, res) => {
   }
 });
 
+// Create new form
 app.post('/create', verifyToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
@@ -807,6 +808,68 @@ app.post('/create', verifyToken, async (req, res) => {
   }
 });
 
+// Update existing form
+app.put('/api/form/:id', verifyToken, async (req, res) => {
+  try {
+    console.log('Received /api/form/:id PUT request:', req.body);
+    const formId = req.params.id;
+    const userId = req.user.userId;
+    const updatedConfig = req.body;
+
+    // Check if form exists and belongs to the user
+    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
+      return res.status(404).json({ error: 'Form not found or access denied' });
+    }
+
+    const validActions = ['url', 'message'];
+    const config = {
+      userId, // Maintain user association
+      template: updatedConfig.template || formConfigs[formId].template,
+      headerText: updatedConfig.headerText || formConfigs[formId].headerText || 'My Form',
+      headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : formConfigs[formId].headerColors,
+      subheaderText: updatedConfig.subheaderText || formConfigs[formId].subheaderText || 'Fill the form',
+      subheaderColor: updatedConfig.subheaderColor || formConfigs[formId].subheaderColor || (updatedConfig.theme === 'dark' ? '#d1d5db' : '#555555'),
+      placeholders: Array.isArray(updatedConfig.placeholders) ? updatedConfig.placeholders.map(p => ({
+        id: sanitizeForJs(p.id),
+        placeholder: sanitizeForJs(p.placeholder)
+      })) : formConfigs[formId].placeholders,
+      borderShadow: updatedConfig.borderShadow || formConfigs[formId].borderShadow || (updatedConfig.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000'),
+      buttonColor: updatedConfig.buttonColor || formConfigs[formId].buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)',
+      buttonTextColor: updatedConfig.buttonTextColor || formConfigs[formId].buttonTextColor || (updatedConfig.buttonColor === '#ffffff' ? '#000000' : '#ffffff'),
+      buttonText: updatedConfig.buttonText || formConfigs[formId].buttonText || 'Sign In',
+      buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : formConfigs[formId].buttonAction || 'url',
+      buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : formConfigs[formId].buttonUrl || '',
+      buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
+      theme: updatedConfig.theme === 'dark' ? 'dark' : formConfigs[formId].theme || 'light',
+      createdAt: formConfigs[formId].createdAt, // Preserve original creation time
+      updatedAt: new Date().toISOString() // Update timestamp
+    };
+
+    if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
+      console.error('Invalid URL provided:', config.buttonUrl);
+      return res.status(400).json({ error: 'Invalid URL provided' });
+    }
+    if (config.buttonAction === 'message' && !config.buttonMessage) {
+      config.buttonMessage = 'Form submitted successfully!';
+    }
+
+    formConfigs[formId] = config;
+    console.log(`Updated form config for ${formId} for user ${userId}:`, config);
+    await saveFormConfigs();
+
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const host = req.headers.host || `localhost:${port}`;
+    const url = `${protocol}://${host}/form/${formId}`;
+    console.log('Generated URL for updated form:', url);
+    res.status(200).json({ url, formId, message: 'Form updated successfully' });
+  } catch (error) {
+    console.error('Error in /api/form/:id PUT:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to update form', details: error.message });
+  }
+});
+
+// Submit form data
 app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
   
@@ -875,6 +938,7 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
+// Delete a submission
 app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
@@ -913,11 +977,12 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
 
     res.status(200).json({ message: 'Submission deleted successfully' });
   } catch (error) {
-    console.error('Error deleting submission:', error.message, error.stack);
+    console.error('Error deleting submission:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to delete submission', details: error.message });
   }
 });
 
+// Delete a form and its submissions
 app.delete('/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
@@ -947,6 +1012,7 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
   }
 });
 
+// Get user submissions
 app.get('/submissions', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -992,6 +1058,7 @@ app.get('/submissions', verifyToken, async (req, res) => {
   }
 });
 
+// Render form page
 app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
@@ -1100,7 +1167,7 @@ app.get('/form/:id', (req, res) => {
   }
 });
 
-// New endpoint to fetch form configuration as JSON for the editor
+// Fetch form configuration for editing
 app.get('/api/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
