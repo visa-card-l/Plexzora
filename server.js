@@ -155,7 +155,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// EJS template for live form - Updated to handle unauthenticated submissions
+// EJS template for live form - Updated submitFormData to remove token check
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -466,12 +466,6 @@ const formTemplate = `
     }
 
     async function submitFormData() {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        showMessagePopup('You must be logged in to submit the form.');
-        return false;
-      }
-
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
       inputs.forEach(input => {
@@ -483,8 +477,7 @@ const formTemplate = `
         const response = await fetch('/form/<%= formId %>/submit', {
           method: 'POST',
           headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify(formData)
         });
@@ -707,7 +700,7 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-// Protected Routes - Get user data
+// Protected Route - Get user data
 app.get('/get', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -736,7 +729,7 @@ app.get('/get', verifyToken, async (req, res) => {
         name: 'Contact Form',
         fields: [
           { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: Shooter: Please enter a valid email address.' } }
         ]
       },
       'payment-checkout': {
@@ -815,25 +808,20 @@ app.post('/create', verifyToken, async (req, res) => {
   }
 });
 
-// Protected Route - Submit form
-app.post('/form/:id/submit', verifyToken, async (req, res) => {
+// Public Route - Submit form (no authentication required)
+app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
-  const userId = req.user.userId;
   
-  // Check if form exists and belongs to the user
+  // Check if form exists
   if (!formConfigs[formId]) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).json({ error: 'Form not found' });
-  }
-  
-  if (formConfigs[formId].userId !== userId) {
-    console.error(`User ${userId} does not have access to form ${formId}`);
-    return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
   }
 
   try {
     const formData = req.body;
     const config = formConfigs[formId];
+    const userId = config.userId; // Associate submission with form's owner
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
@@ -869,13 +857,13 @@ app.post('/form/:id/submit', verifyToken, async (req, res) => {
     });
 
     const submission = {
-      userId, // Associate submission with user
+      userId, // Associate with form's owner
       formId,
       timestamp: new Date().toISOString(),
       data: mappedData
     };
 
-    console.log(`Attempting to save submission for ${formId} by user ${userId}:`, submission);
+    console.log(`Public submission for form ${formId} by user ${userId}:`, submission);
 
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     submissions.push(submission);
