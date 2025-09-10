@@ -137,38 +137,25 @@ let formConfigs = {};
 
 // Middleware - Updated CORS configuration
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests from file:// (null origin), localhost, and production domains
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:8080', // Added for local server testing
-      'https://plexzora.onrender.com',
-      'https://your-frontend-domain.com',
-    ];
-    if (!origin || allowedOrigins.includes(origin) || origin.startsWith('file://')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
   credentials: false
 }));
-
-// Handle preflight requests
-app.options('*', cors({
-  origin: '*', // Allow preflight from any origin
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Accept', 'Authorization']
-}));
-
 app.use(bodyParser.json());
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// EJS template for live form (unchanged)
+// Handle preflight requests
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+  res.sendStatus(200);
+});
+
+// EJS template for live form - Updated to handle unauthenticated submissions
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -479,6 +466,12 @@ const formTemplate = `
     }
 
     async function submitFormData() {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        showMessagePopup('You must be logged in to submit the form.');
+        return false;
+      }
+
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
       inputs.forEach(input => {
@@ -491,7 +484,7 @@ const formTemplate = `
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + localStorage.getItem('token') // Include JWT
+            'Authorization': 'Bearer ' + token
           },
           body: JSON.stringify(formData)
         });
@@ -714,7 +707,7 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-// Protected Routes - UPDATED WITH USER ISOLATION
+// Protected Routes - Get user data
 app.get('/get', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -769,6 +762,7 @@ app.get('/get', verifyToken, async (req, res) => {
   }
 });
 
+// Protected Route - Create form
 app.post('/create', verifyToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
@@ -821,6 +815,7 @@ app.post('/create', verifyToken, async (req, res) => {
   }
 });
 
+// Protected Route - Submit form
 app.post('/form/:id/submit', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
@@ -894,6 +889,7 @@ app.post('/form/:id/submit', verifyToken, async (req, res) => {
   }
 });
 
+// Protected Route - Delete submission
 app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
@@ -937,6 +933,7 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   }
 });
 
+// Protected Route - Delete form
 app.delete('/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
@@ -966,6 +963,7 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
   }
 });
 
+// Protected Route - Get submissions
 app.get('/submissions', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -1011,16 +1009,18 @@ app.get('/submissions', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/form/:id', verifyToken, (req, res) => {
+// Public Route - View form (no authentication required)
+app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
-  const userId = req.user.userId;
   const config = formConfigs[formId];
   
-  // Check if form exists and belongs to user
-  if (!config || config.userId !== userId) {
-    console.error(`User ${userId} does not have access to form ${formId}`);
+  // Check if form exists
+  if (!config) {
+    console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
+
+  console.log(`Public access to form ${formId}`); // Log public access
 
   const templates = {
     'sign-in': {
