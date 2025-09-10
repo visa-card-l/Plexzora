@@ -155,7 +155,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// EJS template for live form - Updated submitFormData to remove token check
+// EJS template for live form
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -700,7 +700,7 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-// Protected Route - Get user data
+// Protected Routes - WITH USER ISOLATION
 app.get('/get', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -729,7 +729,7 @@ app.get('/get', verifyToken, async (req, res) => {
         name: 'Contact Form',
         fields: [
           { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: Shooter: Please enter a valid email address.' } }
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
         ]
       },
       'payment-checkout': {
@@ -755,7 +755,6 @@ app.get('/get', verifyToken, async (req, res) => {
   }
 });
 
-// Protected Route - Create form
 app.post('/create', verifyToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
@@ -808,7 +807,6 @@ app.post('/create', verifyToken, async (req, res) => {
   }
 });
 
-// Public Route - Submit form (no authentication required)
 app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
   
@@ -821,7 +819,7 @@ app.post('/form/:id/submit', async (req, res) => {
   try {
     const formData = req.body;
     const config = formConfigs[formId];
-    const userId = config.userId; // Associate submission with form's owner
+    const userId = config.userId; // Get the form creator's userId
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
@@ -857,13 +855,13 @@ app.post('/form/:id/submit', async (req, res) => {
     });
 
     const submission = {
-      userId, // Associate with form's owner
+      userId, // Associate submission with the form creator's userId
       formId,
       timestamp: new Date().toISOString(),
       data: mappedData
     };
 
-    console.log(`Public submission for form ${formId} by user ${userId}:`, submission);
+    console.log(`Attempting to save submission for ${formId} by user ${userId}:`, submission);
 
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     submissions.push(submission);
@@ -877,7 +875,6 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
-// Protected Route - Delete submission
 app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
@@ -921,7 +918,6 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   }
 });
 
-// Protected Route - Delete form
 app.delete('/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
@@ -951,7 +947,6 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
   }
 });
 
-// Protected Route - Get submissions
 app.get('/submissions', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -997,7 +992,6 @@ app.get('/submissions', verifyToken, async (req, res) => {
   }
 });
 
-// Public Route - View form (no authentication required)
 app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
@@ -1007,8 +1001,6 @@ app.get('/form/:id', (req, res) => {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
-
-  console.log(`Public access to form ${formId}`); // Log public access
 
   const templates = {
     'sign-in': {
