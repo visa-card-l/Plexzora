@@ -137,23 +137,36 @@ let formConfigs = {};
 
 // Middleware - Updated CORS configuration
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
+  origin: (origin, callback) => {
+    // Allow requests from file:// (null origin), localhost, and production domains
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:8080', // Added for local server testing
+      'https://plexzora.onrender.com',
+      'https://your-frontend-domain.com',
+    ];
+    if (!origin || allowedOrigins.includes(origin) || origin.startsWith('file://')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
   credentials: false
 }));
+
+// Handle preflight requests
+app.options('*', cors({
+  origin: '*', // Allow preflight from any origin
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'Authorization']
+}));
+
 app.use(bodyParser.json());
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
-
-// Handle preflight requests
-app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
-  res.sendStatus(200);
-});
 
 // EJS template for live form (unchanged)
 const formTemplate = `
