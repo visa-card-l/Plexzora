@@ -1100,6 +1100,35 @@ app.get('/form/:id', (req, res) => {
   }
 });
 
+// New endpoint to fetch form configuration as JSON for the editor
+app.get('/api/form/:id', verifyToken, async (req, res) => {
+  const formId = req.params.id;
+  const userId = req.user.userId;
+
+  try {
+    // Check if form exists and belongs to the user
+    const config = formConfigs[formId];
+    if (!config) {
+      console.error(`Form not found for ID: ${formId}`);
+      return res.status(404).json({ error: 'Form not found' });
+    }
+    if (config.userId !== userId) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
+      return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
+    }
+
+    console.log(`Retrieved form config for ${formId} for user ${userId}`);
+    res.status(200).json({
+      ...config,
+      formId, // Include formId in the response for clarity
+      message: 'Form configuration retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Error fetching form config for /api/form/:id:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch form configuration', details: error.message });
+  }
+});
+
 // Start the server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
