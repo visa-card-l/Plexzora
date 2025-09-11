@@ -105,23 +105,10 @@ async function loadUserById(userId) {
   return users.find(u => u.id === userId);
 }
 
-// Reload formConfigs from file to ensure data is up-to-date
-async function loadFormConfigs() {
-  try {
-    const data = await fs.readFile(formConfigsFile, 'utf8');
-    formConfigs = JSON.parse(data);
-    console.log('Reloaded formConfigs from file');
-  } catch (err) {
-    console.error('Error reloading formConfigs:', err.message);
-    formConfigs = {};
-  }
-}
-
 // JWT verification middleware
 function verifyToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.error('No token provided in headers:', req.headers);
     return res.status(401).json({ error: 'No token provided' });
   }
 
@@ -129,7 +116,6 @@ function verifyToken(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded; // Store user data in request
-    console.log('Token verified for user:', decoded.userId);
     next();
   } catch (error) {
     console.error('Token verification error:', error.message);
@@ -423,17 +409,7 @@ const formTemplate = `
   </div>
 
   <script>
-    // Ensure templates are parsed correctly
-    let templates;
-    try {
-      templates = JSON.parse('<%- templates %>');
-    } catch (e) {
-      console.error('Error parsing templates:', e);
-      document.getElementById('message-text').textContent = 'Error loading form configuration.';
-      document.getElementById('message-popup').classList.add('show');
-      document.getElementById('message-overlay').classList.add('show');
-      return;
-    }
+    const templates = <%- templates %>;
 
     const loginButton = document.getElementById('login-button');
     const messagePopup = document.getElementById('message-popup');
@@ -451,28 +427,19 @@ const formTemplate = `
     }
 
     function showMessagePopup(message) {
-      console.log('Showing popup with message:', message);
       messageText.textContent = message || 'Welcome! You have clicked the button.';
       messagePopup.classList.add('show');
       messageOverlay.classList.add('show');
     }
 
     function hideMessagePopup() {
-      console.log('Hiding popup');
       messagePopup.classList.remove('show');
       messageOverlay.classList.remove('show');
     }
 
     function checkFormFilled() {
-      console.log('Checking if form is filled');
       const inputs = inputFieldsContainer.querySelectorAll('input');
-      const templateFields = templates['<%= template %>']?.fields || [];
-
-      if (!templateFields.length) {
-        console.error('No template fields found for template:', '<%= template %>');
-        showMessagePopup('Error: Form configuration is invalid.');
-        return false;
-      }
+      const templateFields = templates['<%= template %>'].fields;
 
       for (let i = 0; i < inputs.length; i++) {
         const input = inputs[i];
@@ -481,7 +448,6 @@ const formTemplate = `
         const templateField = templateFields.find(field => field.id === fieldId);
 
         if (!value && (!templateField || templateField.validation.required)) {
-          console.warn('Required field missing:', fieldId);
           showMessagePopup('Please fill all required fields before proceeding.');
           return false;
         }
@@ -490,23 +456,18 @@ const formTemplate = `
           try {
             const regex = new RegExp(templateField.validation.regex);
             if (!regex.test(value)) {
-              console.warn('Validation failed for field:', fieldId, 'Value:', value);
               showMessagePopup(templateField.validation.errorMessage);
               return false;
             }
           } catch (e) {
             console.error('Invalid regex for field:', fieldId, e);
-            showMessagePopup('Error: Invalid field validation.');
-            return false;
           }
         }
       }
-      console.log('Form validation passed');
       return true;
     }
 
     async function submitFormData() {
-      console.log('Submitting form data');
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
       inputs.forEach(input => {
@@ -515,12 +476,10 @@ const formTemplate = `
       });
 
       try {
-        console.log('Sending fetch to /form/<%= formId %>/submit with data:', formData);
         const response = await fetch('/form/<%= formId %>/submit', {
           method: 'POST',
           headers: { 
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify(formData)
         });
@@ -534,36 +493,27 @@ const formTemplate = `
         return true;
       } catch (error) {
         console.error('Error submitting form:', error);
-        showMessagePopup('An error occurred while submitting the form: ' + error.message);
+        showMessagePopup('An error occurred while submitting the form.');
         return false;
       }
     }
 
     try {
       loginButton.addEventListener('click', async () => {
-        console.log('Login button clicked');
-        if (!checkFormFilled()) {
-          console.warn('Form validation failed');
-          return;
-        }
+        if (!checkFormFilled()) return;
         const submitted = await submitFormData();
-        if (!submitted) {
-          console.warn('Form submission failed');
-          return;
-        }
+        if (!submitted) return;
 
         const action = '<%= buttonAction %>';
         const url = '<%= buttonUrl %>';
         const message = '<%= buttonMessage %>';
-        console.log('Button action:', { action, url, message });
-
+        console.log('Button clicked:', { action, url, message });
         if (action === 'url') {
           const normalizedUrl = normalizeUrl(url);
           if (normalizedUrl) {
             console.log('Redirecting to:', normalizedUrl);
             window.location.href = normalizedUrl;
           } else {
-            console.error('Invalid URL:', url);
             showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
           }
         } else if (action === 'message') {
@@ -629,18 +579,19 @@ app.get('/user', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
+    // Use email prefix as fallback if username is empty
     const username = user.username || user.email.split('@')[0];
     res.json({ 
       user: { 
         id: user.id, 
-        username,
+        username, // Ensure username is always provided
         email: user.email, 
         createdAt: user.createdAt 
       },
       message: 'User info retrieved successfully' 
     });
   } catch (error) {
-    console.error('Error fetching user info:', error.message, error.stack);
+    console.error('Error fetching user info:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to fetch user info', details: error.message });
   }
 });
@@ -653,11 +604,13 @@ app.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
+    // Validate password strength
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long' });
     }
@@ -671,6 +624,7 @@ app.post('/signup', async (req, res) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+    // Use email prefix as username if none provided
     const finalUsername = username || email.split('@')[0];
 
     const newUser = {
@@ -687,7 +641,7 @@ app.post('/signup', async (req, res) => {
     const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '1h' });
     res.status(201).json({ message: 'User created successfully', token });
   } catch (error) {
-    console.error('Signup error:', error.message, error.stack);
+    console.error('Signup error:', error.message, err.stack);
     res.status(500).json({ error: 'Signup failed', details: error.message });
   }
 });
@@ -714,12 +668,12 @@ app.post('/login', async (req, res) => {
     const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
     res.json({ message: 'Login successful', token });
   } catch (error) {
-    console.error('Login error:', error.message, error.stack);
+    console.error('Login error:', error.message, err.stack);
     res.status(500).json({ error: 'Login failed', details: error.message });
   }
 });
 
-// Auth Route: Forgot Password
+// Auth Route: Forgot Password (check if email exists)
 app.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -735,12 +689,12 @@ app.post('/forgot-password', async (req, res) => {
 
     res.json({ message: 'Email found, proceed to reset' });
   } catch (error) {
-    console.error('Forgot password error:', error.message, error.stack);
+    console.error('Forgot password error:', error.message, err.stack);
     res.status(500).json({ error: 'Forgot password check failed', details: error.message });
   }
 });
 
-// Auth Route: Reset Password
+// Auth Route: Reset Password (update if email exists)
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -748,6 +702,7 @@ app.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Email and new password are required' });
     }
 
+    // Validate password strength
     if (password.length < 8) {
       return res.status(400).json({ error: 'New password must be at least 8 characters long' });
     }
@@ -767,18 +722,21 @@ app.post('/reset-password', async (req, res) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('Reset password error:', error.message, error.stack);
+    console.error('Reset password error:', error.message, err.stack);
     res.status(500).json({ error: 'Reset password failed', details: error.message });
   }
 });
 
-// Protected Routes
+// Protected Routes - WITH USER ISOLATION
 app.get('/get', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    
+    // Filter submissions by user
     const userSubmissions = submissions.filter(s => s.userId === userId);
     
+    // Filter form configs by user
     const userFormConfigs = {};
     Object.entries(formConfigs).forEach(([formId, config]) => {
       if (config.userId === userId) {
@@ -819,7 +777,7 @@ app.get('/get', verifyToken, async (req, res) => {
       userId
     });
   } catch (error) {
-    console.error('Error fetching data for /get:', error.message, error.stack);
+    console.error('Error fetching data for /get:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to fetch data', details: error.message });
   }
 });
@@ -832,7 +790,7 @@ app.post('/create', verifyToken, async (req, res) => {
     const formId = generateShortCode();
     const validActions = ['url', 'message'];
     const config = {
-      userId,
+      userId, // Associate form with user
       template: templateId,
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
@@ -871,7 +829,7 @@ app.post('/create', verifyToken, async (req, res) => {
     console.log('Generated URL:', url);
     res.status(200).json({ url, formId });
   } catch (error) {
-    console.error('Error in /create:', error.message, error.stack);
+    console.error('Error in /create:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
   }
 });
@@ -879,6 +837,7 @@ app.post('/create', verifyToken, async (req, res) => {
 app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
   
+  // Check if form exists
   if (!formConfigs[formId]) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).json({ error: 'Form not found' });
@@ -887,7 +846,7 @@ app.post('/form/:id/submit', async (req, res) => {
   try {
     const formData = req.body;
     const config = formConfigs[formId];
-    const userId = config.userId;
+    const userId = config.userId; // Get the form creator's userId
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
@@ -914,6 +873,7 @@ app.post('/form/:id/submit', async (req, res) => {
     };
     const template = templates[config.template] || templates['sign-in'];
 
+    // Validate form data against template fields
     for (const field of template.fields) {
       if (field.validation.required && !formData[field.id]) {
         return res.status(400).json({ error: `Field ${field.placeholder} is required` });
@@ -935,7 +895,7 @@ app.post('/form/:id/submit', async (req, res) => {
     });
 
     const submission = {
-      userId,
+      userId, // Associate submission with the form creator's userId
       formId,
       timestamp: new Date().toISOString(),
       data: mappedData
@@ -950,7 +910,7 @@ app.post('/form/:id/submit', async (req, res) => {
     console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
-    console.error('Error saving submission:', error.message, error.stack);
+    console.error('Error saving submission:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to save submission', details: error.message });
   }
 });
@@ -961,12 +921,14 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
+    // Check if form exists and belongs to user
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
 
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    // Filter submissions by user and form
     const userFormSubmissions = submissions.filter(s => s.userId === userId && s.formId === formId);
 
     if (index < 0 || index >= userFormSubmissions.length) {
@@ -974,6 +936,7 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
+    // Find the global index of this submission
     const submissionToDelete = userFormSubmissions[index];
     const globalIndex = submissions.findIndex(s => 
       s.userId === userId && s.formId === formId && s.timestamp === submissionToDelete.timestamp
@@ -990,7 +953,7 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
 
     res.status(200).json({ message: 'Submission deleted successfully' });
   } catch (error) {
-    console.error('Error deleting submission:', error.message, error.stack);
+    console.error('Error deleting submission:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to delete submission', details: error.message });
   }
 });
@@ -1000,6 +963,7 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
+    // Check if form exists and belongs to user
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
@@ -1008,6 +972,7 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
     delete formConfigs[formId];
     await saveFormConfigs();
 
+    // Delete only user's submissions for this form
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const updatedSubmissions = submissions.filter(s => 
       !(s.userId === userId && s.formId === formId)
@@ -1017,7 +982,7 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
 
     res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
   } catch (error) {
-    console.error('Error deleting form:', error.message, error.stack);
+    console.error('Error deleting form:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to delete form', details: error.message });
   }
 });
@@ -1026,13 +991,15 @@ app.get('/submissions', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    
+    // Filter submissions by user
     const userSubmissions = submissions.filter(s => s.userId === userId);
 
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
         fields: [
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: 'true', regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
           { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
         ]
       },
@@ -1060,7 +1027,7 @@ app.get('/submissions', verifyToken, async (req, res) => {
       userId
     });
   } catch (error) {
-    console.error('Error fetching submissions:', error.message, error.stack);
+    console.error('Error fetching submissions:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
   }
 });
@@ -1069,6 +1036,7 @@ app.get('/form/:id', (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   
+  // Check if form exists
   if (!config) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
@@ -1167,104 +1135,18 @@ app.get('/form/:id', (req, res) => {
     res.set('Content-Type', 'text/html');
     res.send(html);
   } catch (error) {
-    console.error('Error rendering form:', error.message, error.stack);
+    console.error('Error rendering form:', error.message, err.stack);
     res.status(500).send('Error rendering form');
   }
 });
 
-// Endpoint to update form configuration
-app.put('/api/form/:id', verifyToken, async (req, res) => {
-  const formId = req.params.id;
-  const userId = req.user.userId;
-
-  try {
-    // Reload formConfigs to ensure data is fresh
-    await loadFormConfigs();
-
-    // Check if form exists and belongs to the user
-    const config = formConfigs[formId];
-    if (!config) {
-      console.error(`Form not found for ID: ${formId}`);
-      return res.status(404).json({ error: 'Form not found' });
-    }
-    if (config.userId !== userId) {
-      console.error(`User ${userId} does not have access to form ${formId}`);
-      return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
-    }
-
-    console.log(`Processing update for form ${formId} by user ${userId}:`, req.body);
-
-    const validActions = ['url', 'message'];
-    const updatedConfig = {
-      ...config,
-      template: req.body.template || config.template,
-      headerText: req.body.headerText || config.headerText || 'My Form',
-      headerColors: Array.isArray(req.body.headerColors)
-        ? req.body.headerColors.map(sanitizeForJs)
-        : config.headerColors || [],
-      subheaderText: req.body.subheaderText || config.subheaderText || 'Fill the form',
-      subheaderColor:
-        req.body.subheaderColor ||
-        config.subheaderColor ||
-        (req.body.theme === 'dark' ? '#d1d5db' : '#555555'),
-      placeholders: Array.isArray(req.body.placeholders)
-        ? req.body.placeholders.map(p => ({
-            id: sanitizeForJs(p.id),
-            placeholder: sanitizeForJs(p.placeholder),
-          }))
-        : config.placeholders || [],
-      borderShadow:
-        req.body.borderShadow ||
-        config.borderShadow ||
-        (req.body.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000'),
-      buttonColor:
-        req.body.buttonColor ||
-        config.buttonColor ||
-        'linear-gradient(45deg, #00b7ff, #0078ff)',
-      buttonTextColor:
-        req.body.buttonTextColor ||
-        config.buttonTextColor ||
-        (req.body.buttonColor === '#ffffff' ? '#000000' : '#ffffff'),
-      buttonText: req.body.buttonText || config.buttonText || 'Sign In',
-      buttonAction: validActions.includes(req.body.buttonAction)
-        ? req.body.buttonAction
-        : config.buttonAction || 'url',
-      buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : config.buttonUrl || '',
-      buttonMessage: req.body.buttonMessage || config.buttonMessage || '',
-      theme: req.body.theme === 'dark' ? 'dark' : config.theme || 'light',
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (updatedConfig.buttonAction === 'url' && updatedConfig.buttonUrl && !normalizeUrl(updatedConfig.buttonUrl)) {
-      console.error('Invalid URL provided:', updatedConfig.buttonUrl);
-      return res.status(400).json({ error: 'Invalid URL provided' });
-    }
-    if (updatedConfig.buttonAction === 'message' && !updatedConfig.buttonMessage) {
-      updatedConfig.buttonMessage = 'Form submitted successfully!';
-    }
-
-    formConfigs[formId] = updatedConfig;
-    console.log(`Updated form config for ${formId} for user ${userId}:`, updatedConfig);
-    await saveFormConfigs();
-
-    res.status(200).json({
-      ...updatedConfig,
-      formId,
-      message: 'Form updated successfully',
-    });
-  } catch (error) {
-    console.error('Error updating form config for /api/form/:id:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to update form configuration', details: error.message });
-  }
-});
-
-// Endpoint to fetch form configuration
+// New endpoint to fetch form configuration as JSON for the editor
 app.get('/api/form/:id', verifyToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
 
   try {
-    await loadFormConfigs();
+    // Check if form exists and belongs to the user
     const config = formConfigs[formId];
     if (!config) {
       console.error(`Form not found for ID: ${formId}`);
@@ -1278,11 +1160,11 @@ app.get('/api/form/:id', verifyToken, async (req, res) => {
     console.log(`Retrieved form config for ${formId} for user ${userId}`);
     res.status(200).json({
       ...config,
-      formId,
+      formId, // Include formId in the response for clarity
       message: 'Form configuration retrieved successfully'
     });
   } catch (error) {
-    console.error('Error fetching form config for /api/form/:id:', error.message, error.stack);
+    console.error('Error fetching form config for /api/form/:id:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to fetch form configuration', details: error.message });
   }
 });
@@ -1297,6 +1179,6 @@ app.use((err, req, res, next) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 }).on('error', (error) => {
-  console.error('Server startup error:', error.message, error.stack);
+  console.error('Server startup error:', error.message, err.stack);
   process.exit(1);
 });
