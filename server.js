@@ -1371,7 +1371,7 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       headerText: updatedConfig.headerText || formConfigs[formId].headerText || 'My Form',
       headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : formConfigs[formId].headerColors,
       subheaderText: updatedConfig.subheaderText || formConfigs[formId].subheaderText || 'Fill the form',
-      subheaderColor: updatedConfig.subheaderColor || formConfigs[formId].subheaderColor || (updatedConfig.theme === 'dark' ? '#d1d5db' : '#555555'),
+      subheaderColor: updatedConfig.subheaderColor || formConfigs[formId].subheaderColor || (updatedConfig.theme === 'theme' ? '#d1d5db' : '#555555'),
       placeholders: Array.isArray(updatedConfig.placeholders) ? updatedConfig.placeholders.map(p => ({
         id: sanitizeForJs(p.id),
         placeholder: sanitizeForJs(p.placeholder)
