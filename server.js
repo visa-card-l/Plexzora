@@ -1371,7 +1371,7 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       headerText: updatedConfig.headerText || formConfigs[formId].headerText || 'My Form',
       headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : formConfigs[formId].headerColors,
       subheaderText: updatedConfig.subheaderText || formConfigs[formId].subheaderText || 'Fill the form',
-      subheaderColor: updatedConfig.subheaderColor || formConfigs[formId].subheaderColor || (updatedConfig.theme === 'theme' ? '#d1d5db' : '#555555'),
+      subheaderColor: updatedConfig.subheaderColor || formConfigs[formId].subheaderColor || (updatedConfig.theme === 'dark' ? '#d1d5db' : '#555555'),
       placeholders: Array.isArray(updatedConfig.placeholders) ? updatedConfig.placeholders.map(p => ({
         id: sanitizeForJs(p.id),
         placeholder: sanitizeForJs(p.placeholder)
@@ -1383,7 +1383,7 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : formConfigs[formId].buttonAction || 'url',
       buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : formConfigs[formId].buttonUrl || '',
       buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
-      theme: updatedConfig.theme === 'dark' ? 'dark' : formConfigs[formId].theme || 'light',
+      theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light'? 'light' : formConfigs[formId].theme || 'light',
       createdAt: formConfigs[formId].createdAt, // Preserve original creation time
       updatedAt: new Date().toISOString() // Update timestamp
     };
