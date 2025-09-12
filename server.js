@@ -72,11 +72,17 @@ async function initializeAdminSettingsFile() {
 // Save formConfigs to file
 async function saveFormConfigs() {
   try {
-    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2));
-    console.log('Saved formConfigs to file');
+    // Ensure formConfigs is not undefined or null
+    if (!formConfigs) {
+      throw new Error('formConfigs object is undefined or null');
+    }
+    
+    // Write formConfigs to file with proper formatting
+    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2), 'utf8');
+    console.log(`Successfully saved formConfigs to ${formConfigsFile}`);
   } catch (err) {
     console.error('Error saving formConfigs:', err.message, err.stack);
-    throw err;
+    throw err; // Rethrow to allow calling functions to handle the error
   }
 }
 
@@ -1401,9 +1407,17 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       config.buttonMessage = 'Form submitted successfully!';
     }
 
+    // Update the formConfigs object
     formConfigs[formId] = config;
     console.log(`Updated form config for ${formId} for user ${userId}:`, config);
-    await saveFormConfigs();
+
+    // Save the updated formConfigs to file
+    try {
+      await saveFormConfigs();
+    } catch (saveError) {
+      console.error(`Failed to save formConfigs for form ${formId}:`, saveError.message, saveError.stack);
+      return res.status(500).json({ error: 'Failed to save form configuration to file', details: saveError.message });
+    }
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
