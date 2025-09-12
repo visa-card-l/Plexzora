@@ -55,6 +55,17 @@ async function initializeFormConfigsFile() {
   }
 }
 
+// Save formConfigs to file
+async function saveFormConfigs() {
+  try {
+    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2));
+    console.log('Saved formConfigs to file');
+  } catch (err) {
+    console.error('Error saving formConfigs:', err.message, err.stack);
+    throw err;
+  }
+}
+
 // Initialize admin settings file
 async function initializeAdminSettingsFile() {
   try {
@@ -66,23 +77,6 @@ async function initializeAdminSettingsFile() {
       maxFormsPerUser: 10 // Default: 10 forms per user
     }));
     console.log('Created adminSettings.json');
-  }
-}
-
-// Save formConfigs to file
-async function saveFormConfigs() {
-  try {
-    // Ensure formConfigs is not undefined or null
-    if (!formConfigs) {
-      throw new Error('formConfigs object is undefined or null');
-    }
-    
-    // Write formConfigs to file with proper formatting
-    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2), 'utf8');
-    console.log(`Successfully saved formConfigs to ${formConfigsFile}`);
-  } catch (err) {
-    console.error('Error saving formConfigs:', err.message, err.stack);
-    throw err; // Rethrow to allow calling functions to handle the error
   }
 }
 
@@ -1265,7 +1259,7 @@ app.get('/get', verifyToken, async (req, res) => {
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
           { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
         ]
@@ -1364,17 +1358,13 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
     const userId = req.user.userId;
     const updatedConfig = req.body;
 
-    // Check if form exists, belongs to user, and is not expired
+    // Check if form exists and belongs to the user
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
-    if (await isFormExpired(formId)) {
-      return res.status(403).json({ error: 'Form has expired' });
-    }
 
     const validActions = ['url', 'message'];
-    const adminSettings = await loadAdminSettings();
     const config = {
       userId, // Maintain user association
       template: updatedConfig.template || formConfigs[formId].template,
@@ -1395,7 +1385,6 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
       theme: updatedConfig.theme === 'dark' ? 'dark' : formConfigs[formId].theme || 'light',
       createdAt: formConfigs[formId].createdAt, // Preserve original creation time
-      expiresAt: new Date(Date.now() + adminSettings.linkLifespan).toISOString(), // Update expiration
       updatedAt: new Date().toISOString() // Update timestamp
     };
 
@@ -1407,23 +1396,15 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       config.buttonMessage = 'Form submitted successfully!';
     }
 
-    // Update the formConfigs object
     formConfigs[formId] = config;
     console.log(`Updated form config for ${formId} for user ${userId}:`, config);
-
-    // Save the updated formConfigs to file
-    try {
-      await saveFormConfigs();
-    } catch (saveError) {
-      console.error(`Failed to save formConfigs for form ${formId}:`, saveError.message, saveError.stack);
-      return res.status(500).json({ error: 'Failed to save form configuration to file', details: saveError.message });
-    }
+    await saveFormConfigs();
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
     console.log('Generated URL for updated form:', url);
-    res.status(200).json({ url, formId, expiresAt: config.expiresAt, message: 'Form updated successfully' });
+    res.status(200).json({ url, formId, message: 'Form updated successfully' });
   } catch (error) {
     console.error('Error in /api/form/:id PUT:', error.message, error.stack);
     res.status(500).json({ error: 'Failed to update form', details: error.message });
