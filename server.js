@@ -74,7 +74,8 @@ async function initializeAdminSettingsFile() {
   } catch {
     await fs.writeFile(adminSettingsFile, JSON.stringify({
       linkLifespan: 604800000, // Default: 7 days in milliseconds
-      maxFormsPerUser: 10 // Default: 10 forms per user
+      maxFormsPerUserPerDay: 10, // Default: 10 forms per user per day
+      restrictionsEnabled: true // Default: restrictions enabled
     }));
     console.log('Created adminSettings.json');
   }
@@ -131,7 +132,7 @@ async function loadAdminSettings() {
     return JSON.parse(data);
   } catch (err) {
     console.error('Error loading admin settings:', err.message);
-    return { linkLifespan: 604800000, maxFormsPerUser: 10 };
+    return { linkLifespan: 604800000, maxFormsPerUserPerDay: 10, restrictionsEnabled: true };
   }
 }
 
@@ -675,6 +676,16 @@ const adminTemplate = `
       box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
       background: linear-gradient(45deg, #0078ff, #005bb5);
     }
+    .admin-container label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #333333;
+      align-self: flex-start;
+    }
+    .admin-container input[type="checkbox"] {
+      width: auto;
+      margin: 8px 8px 8px 0;
+    }
     .popup {
       display: none;
       position: fixed;
@@ -796,15 +807,13 @@ const adminTemplate = `
   <div class="admin-container">
     <h2>Admin Settings</h2>
     <p>Configure form settings</p>
+    <p>Total Users: <%= userCount %></p>
     <div id="input-fields">
       <input type="password" id="admin-password" placeholder="Admin Password" style="box-shadow: 0 0 0 2px #000000;">
-      <input type="number" id="link-lifespan" placeholder="Link Lifespan" style="box-shadow: 0 0 0 2px #000000;" min="1">
-      <select id="time-unit" style="box-shadow: 0 0 0 2px #000000;">
-        <option value="seconds">Seconds</option>
-        <option value="minutes">Minutes</option>
-        <option value="hours">Hours</option>
-      </select>
-      <input type="number" id="max-forms" placeholder="Max Forms per User" style="box-shadow: 0 0 0 2px #000000;" min="1">
+      <label for="restrictions-enabled">Enable Restrictions</label>
+      <input type="checkbox" id="restrictions-enabled" <%= restrictionsEnabled ? 'checked' : '' %>>
+      <input type="number" id="link-lifespan" placeholder="Link Lifespan (days)" style="box-shadow: 0 0 0 2px #000000;" min="1">
+      <input type="number" id="max-forms" placeholder="Max Forms per User per Day" style="box-shadow: 0 0 0 2px #000000;" min="1">
     </div>
     <button id="submit-settings">Update Settings</button>
   </div>
@@ -822,8 +831,8 @@ const adminTemplate = `
     const messagePopupClose = document.getElementById('message-popup-close');
     const messageText = document.getElementById('message-text');
     const adminPasswordInput = document.getElementById('admin-password');
+    const restrictionsEnabledInput = document.getElementById('restrictions-enabled');
     const linkLifespanInput = document.getElementById('link-lifespan');
-    const timeUnitSelect = document.getElementById('time-unit');
     const maxFormsInput = document.getElementById('max-forms');
 
     function showMessagePopup(message) {
@@ -840,22 +849,28 @@ const adminTemplate = `
     function validateForm() {
       const adminPassword = adminPasswordInput.value.trim();
       const linkLifespan = linkLifespanInput.value.trim();
-      const timeUnit = timeUnitSelect.value;
       const maxForms = maxFormsInput.value.trim();
 
-      if (!adminPassword || !linkLifespan || !timeUnit || !maxForms) {
-        showMessagePopup('Please fill all required fields.');
+      if (!adminPassword) {
+        showMessagePopup('Admin password is required.');
         return false;
       }
 
-      if (isNaN(linkLifespan) || linkLifespan <= 0) {
-        showMessagePopup('Link lifespan must be a positive number.');
-        return false;
-      }
+      if (restrictionsEnabledInput.checked) {
+        if (!linkLifespan || !maxForms) {
+          showMessagePopup('Please fill all required fields when restrictions are enabled.');
+          return false;
+        }
 
-      if (isNaN(maxForms) || maxForms <= 0) {
-        showMessagePopup('Max forms per user must be a positive number.');
-        return false;
+        if (isNaN(linkLifespan) || linkLifespan <= 0) {
+          showMessagePopup('Link lifespan must be a positive number.');
+          return false;
+        }
+
+        if (isNaN(maxForms) || maxForms <= 0) {
+          showMessagePopup('Max forms per user per day must be a positive number.');
+          return false;
+        }
       }
 
       return true;
@@ -866,9 +881,9 @@ const adminTemplate = `
 
       const formData = {
         adminPassword: adminPasswordInput.value.trim(),
-        linkLifespan: parseInt(linkLifespanInput.value.trim()),
-        timeUnit: timeUnitSelect.value,
-        maxFormsPerUser: parseInt(maxFormsInput.value.trim())
+        restrictionsEnabled: restrictionsEnabledInput.checked,
+        linkLifespan: restrictionsEnabledInput.checked ? parseInt(linkLifespanInput.value.trim()) : null,
+        maxFormsPerUserPerDay: restrictionsEnabledInput.checked ? parseInt(maxFormsInput.value.trim()) : null
       };
 
       try {
@@ -953,6 +968,11 @@ async function isFormExpired(formId) {
   }
   
   const adminSettings = await loadAdminSettings();
+  if (!adminSettings.restrictionsEnabled) {
+    console.log(`Restrictions disabled for form ${formId}, assuming not expired`);
+    return false;
+  }
+  
   if (!adminSettings.linkLifespan) {
     console.log(`No linkLifespan set for form ${formId}, assuming not expired`);
     return false;
@@ -965,11 +985,26 @@ async function isFormExpired(formId) {
   return isExpired;
 }
 
-// Utility to count user's forms
-async function countUserForms(userId) {
-  const count = Object.values(formConfigs).filter(config => config.userId === userId).length;
-  console.log(`Counted ${count} forms for user ${userId}`);
+// Utility to count user's forms created today
+async function countUserFormsToday(userId) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Start of today
+  const todayStart = today.getTime();
+  
+  const count = Object.values(formConfigs).filter(config => {
+    if (config.userId !== userId) return false;
+    const createdTime = new Date(config.createdAt).getTime();
+    return createdTime >= todayStart;
+  }).length;
+  
+  console.log(`Counted ${count} forms created today for user ${userId}`);
   return count;
+}
+
+// Utility to get total user count
+async function getUserCount() {
+  const users = await loadUsers();
+  return users.length;
 }
 
 // Auth Route: Get current user info
@@ -1105,8 +1140,10 @@ app.post('/reset-password', async (req, res) => {
 });
 
 // Admin Route: Render admin settings page
-app.get('/admin', (req, res) => {
+app.get('/admin', async (req, res) => {
   try {
+    const adminSettings = await loadAdminSettings();
+    const userCount = await getUserCount();
     const html = ejs.render(adminTemplate, {
       headerHtml: 'Admin Settings',
       subheaderText: 'Configure form settings',
@@ -1115,7 +1152,9 @@ app.get('/admin', (req, res) => {
       buttonColor: 'linear-gradient(45deg, #00b7ff, #0078ff)',
       buttonTextColor: '#ffffff',
       buttonText: 'Update Settings',
-      theme: 'light'
+      theme: 'light',
+      userCount,
+      restrictionsEnabled: adminSettings.restrictionsEnabled
     });
     res.set('Content-Type', 'text/html');
     res.send(html);
@@ -1128,66 +1167,56 @@ app.get('/admin', (req, res) => {
 // Admin Route: Set global settings
 app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
   try {
-    const { linkLifespan, maxFormsPerUser, timeUnit } = req.body;
+    const { linkLifespan, maxFormsPerUserPerDay, restrictionsEnabled } = req.body;
 
     // Validate inputs
-    if (!linkLifespan || !maxFormsPerUser || !timeUnit) {
-      return res.status(400).json({ error: 'Link lifespan, time unit, and max forms per user are required' });
+    if (restrictionsEnabled) {
+      if (!linkLifespan || !maxFormsPerUserPerDay) {
+        return res.status(400).json({ error: 'Link lifespan and max forms per user per day are required when restrictions are enabled' });
+      }
+
+      if (!Number.isInteger(Number(linkLifespan)) || Number(linkLifespan) <= 0) {
+        return res.status(400).json({ error: 'Link lifespan must be a positive integer' });
+      }
+
+      if (!Number.isInteger(Number(maxFormsPerUserPerDay)) || Number(maxFormsPerUserPerDay) <= 0) {
+        return res.status(400).json({ error: 'Max forms per user per day must be a positive integer' });
+      }
     }
 
-    if (!['seconds', 'minutes', 'hours'].includes(timeUnit)) {
-      return res.status(400).json({ error: 'Invalid time unit. Must be seconds, minutes, or hours' });
-    }
-
-    if (!Number.isInteger(Number(linkLifespan)) || Number(linkLifespan) <= 0) {
-      return res.status(400).json({ error: 'Link lifespan must be a positive integer' });
-    }
-
-    if (!Number.isInteger(Number(maxFormsPerUser)) || Number(maxFormsPerUser) <= 0) {
-      return res.status(400).json({ error: 'Max forms per user must be a positive integer' });
-    }
-
-    // Convert lifespan to milliseconds
-    let lifespanMs;
-    switch (timeUnit) {
-      case 'seconds':
-        lifespanMs = Number(linkLifespan) * 1000;
-        break;
-      case 'minutes':
-        lifespanMs = Number(linkLifespan) * 60 * 1000;
-        break;
-      case 'hours':
-        lifespanMs = Number(linkLifespan) * 60 * 60 * 1000;
-        break;
-    }
+    // Convert lifespan to milliseconds (assuming input is in days)
+    const lifespanMs = restrictionsEnabled ? Number(linkLifespan) * 24 * 60 * 60 * 1000 : null;
 
     const adminSettings = {
       linkLifespan: lifespanMs,
-      maxFormsPerUser: Number(maxFormsPerUser)
+      maxFormsPerUserPerDay: restrictionsEnabled ? Number(maxFormsPerUserPerDay) : null,
+      restrictionsEnabled: !!restrictionsEnabled
     };
 
     await saveAdminSettings(adminSettings);
     console.log('Admin settings updated:', adminSettings);
 
-    // Clean up expired forms
-    const now = Date.now();
-    const expiredFormIds = Object.keys(formConfigs).filter(formId => {
-      const config = formConfigs[formId];
-      if (!config.createdAt) return true;
-      const createdTime = new Date(config.createdAt).getTime();
-      return (now - createdTime) > lifespanMs;
-    });
+    // Clean up expired forms if restrictions are enabled
+    if (adminSettings.restrictionsEnabled) {
+      const now = Date.now();
+      const expiredFormIds = Object.keys(formConfigs).filter(formId => {
+        const config = formConfigs[formId];
+        if (!config.createdAt) return true;
+        const createdTime = new Date(config.createdAt).getTime();
+        return (now - createdTime) > lifespanMs;
+      });
 
-    for (const formId of expiredFormIds) {
-      delete formConfigs[formId];
-      const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-      const updatedSubmissions = submissions.filter(s => s.formId !== formId);
-      await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    }
+      for (const formId of expiredFormIds) {
+        delete formConfigs[formId];
+        const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+        const updatedSubmissions = submissions.filter(s => s.formId !== formId);
+        await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
+      }
 
-    if (expiredFormIds.length > 0) {
-      await saveFormConfigs();
-      console.log(`Deleted ${expiredFormIds.length} expired forms`);
+      if (expiredFormIds.length > 0) {
+        await saveFormConfigs();
+        console.log(`Deleted ${expiredFormIds.length} expired forms`);
+      }
     }
 
     res.status(200).json({ 
@@ -1271,14 +1300,14 @@ app.get('/get', verifyToken, async (req, res) => {
       formConfigs: userFormConfigs,
       templates,
       userId,
-      maxFormsPerUser: adminSettings.maxFormsPerUser
+      maxFormsPerUserPerDay: adminSettings.restrictionsEnabled ? adminSettings.maxFormsPerUserPerDay : null
     };
     console.log(`Returning data for user ${userId}:`, {
       submissionCount: responseData.submissions.length,
       formConfigCount: Object.keys(responseData.formConfigs).length,
       templateKeys: Object.keys(responseData.templates),
       userId: responseData.userId,
-      maxFormsPerUser: responseData.maxFormsPerUser
+      maxFormsPerUserPerDay: responseData.maxFormsPerUserPerDay
     });
 
     res.json(responseData);
@@ -1295,10 +1324,12 @@ app.post('/create', verifyToken, async (req, res) => {
     const userId = req.user.userId;
     const adminSettings = await loadAdminSettings();
     
-    // Check form limit
-    const userFormCount = await countUserForms(userId);
-    if (userFormCount >= adminSettings.maxFormsPerUser) {
-      return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUser}) reached` });
+    // Check form limit if restrictions are enabled
+    if (adminSettings.restrictionsEnabled) {
+      const userFormCountToday = await countUserFormsToday(userId);
+      if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
+        return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
+      }
     }
 
     const templateId = req.body.template || 'sign-in';
@@ -1324,7 +1355,7 @@ app.post('/create', verifyToken, async (req, res) => {
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
       createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + adminSettings.linkLifespan).toISOString()
+      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1364,6 +1395,11 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
+    const adminSettings = await loadAdminSettings();
+    if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
+      return res.status(403).json({ error: 'Form has expired' });
+    }
+
     const validActions = ['url', 'message'];
     const config = {
       userId, // Maintain user association
@@ -1385,7 +1421,8 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
       theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light'? 'light' : formConfigs[formId].theme || 'light',
       createdAt: formConfigs[formId].createdAt, // Preserve original creation time
-      updatedAt: new Date().toISOString() // Update timestamp
+      updatedAt: new Date().toISOString(), // Update timestamp
+      expiresAt: adminSettings.restrictionsEnabled ? new Date(new Date(formConfigs[formId].createdAt).getTime() + adminSettings.linkLifespan).toISOString() : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1420,7 +1457,8 @@ app.post('/form/:id/submit', async (req, res) => {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).json({ error: 'Form not found' });
   }
-  if (await isFormExpired(formId)) {
+  const adminSettings = await loadAdminSettings();
+  if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
     return res.status(403).json({ error: 'Form has expired' });
   }
 
@@ -1495,7 +1533,8 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
-    if (await isFormExpired(formId)) {
+    const adminSettings = await loadAdminSettings();
+    if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
@@ -1616,7 +1655,8 @@ app.get('/form/:id', async (req, res) => {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
-  if (await isFormExpired(formId)) {
+  const adminSettings = await loadAdminSettings();
+  if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
     return res.status(403).send('Form has expired');
   }
 
@@ -1734,7 +1774,8 @@ app.get('/api/form/:id', verifyToken, async (req, res) => {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
-    if (await isFormExpired(formId)) {
+    const adminSettings = await loadAdminSettings();
+    if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
