@@ -1235,7 +1235,7 @@ app.put('/api/form/:id', verifyToken, async (req, res) => {
       buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : formConfigs[formId].buttonUrl || '',
       buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
       theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light'? 'light' : formConfigs[formId].theme || 'light', 
-                                                                                      formConfigs[formId].theme || 'light',
+                                                                                     
       createdAt: formConfigs[formId].createdAt,
       updatedAt: new Date().toISOString(),
       expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespanSeconds * 1000).toISOString() : formConfigs[formId].expiresAt
