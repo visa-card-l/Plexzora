@@ -38,7 +38,7 @@ app.set('views', path.join(__dirname, 'templates'));
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type', Accept, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
   res.sendStatus(200);
 });
 
@@ -74,6 +74,6 @@ async function loadRoutes() {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 }).on('error', (error) => {
-  console.error('Server startup error:', error.message, error.stack);
+  console.error('Server startup error:', error.message, err.stack);
   process.exit(1);
 });
