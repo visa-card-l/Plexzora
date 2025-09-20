@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><%= templateName %></title>
+  <title><%= templateName || 'Form' %></title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body {
@@ -17,7 +17,6 @@
       margin: 0;
       padding: 40px 20px 20px;
       box-sizing: border-box;
-      transition: background 0.3s ease;
     }
     .login-container {
       background: <%= theme === 'dark' ? '#2f3b5a' : 'white' %>;
@@ -25,21 +24,13 @@
       border-radius: 16px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 320px;
-      min-height: <%= minHeight %>;
-      height: auto;
+      min-height: <%= minHeight || '300px' %>;
       text-align: center;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
       gap: 16px;
-      opacity: 1;
-      margin: 0 auto;
-    }
-    .login-container:hover {
-      transform: scale(1.02);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
     }
     .login-container h2 {
       font-size: 1.8rem;
@@ -50,22 +41,8 @@
     .login-container p {
       font-size: 0.9rem;
       font-weight: 400;
-      color: <%= subheaderColor %>;
+      color: <%= subheaderColor || '#555555' %>;
       margin: 0 0 16px;
-    }
-    .login-container span {
-      cursor: default;
-      pointer-events: none;
-      position: relative;
-      display: inline-block;
-      margin: 0;
-      letter-spacing: 0.5px;
-    }
-    .login-container span.space {
-      margin-right: 4px;
-      letter-spacing: 0;
-      width: 4px;
-      display: inline-block;
     }
     .login-container input {
       width: 100%;
@@ -74,22 +51,17 @@
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
-      transition: all 0.2s ease;
       border: none;
-      box-shadow: <%= borderShadow %>;
+      box-shadow: <%= borderShadow || '0 0 0 2px #000000' %>;
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
-      opacity: 1;
     }
     .login-container input:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.3);
-      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
-    }
-    .login-container input:not(:placeholder-shown) {
       background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
     .login-container button {
@@ -98,10 +70,8 @@
       margin: 20px 0 0;
       border-radius: 8px;
       font-size: 0.95rem;
-      box-sizing: border-box;
-      transition: all 0.2s ease;
-      background: <%= buttonColor %>;
-      color: <%= buttonTextColor %>;
+      background: <%= buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)' %>;
+      color: <%= buttonTextColor || '#ffffff' %>;
       border: none;
       cursor: pointer;
       font-weight: 500;
@@ -110,14 +80,13 @@
     .login-container button:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
-      background: <%= buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : buttonColor %>;
     }
     .popup {
       display: none;
       position: fixed;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%) scale(0.8);
+      transform: translate(-50%, -50%);
       background: <%= theme === 'dark' ? '#2f3b5a' : '#ffffff' %>;
       padding: 20px;
       border-radius: 12px;
@@ -126,13 +95,9 @@
       text-align: center;
       max-width: 300px;
       width: 90%;
-      transition: transform 0.3s ease, opacity 0.3s ease;
-      border: 1px solid rgba(0, 183, 255, <%= theme === 'dark' ? '0.2' : '0.1' %>);
     }
     .popup.show {
       display: block;
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 1;
     }
     .popup h4 {
       font-size: 1rem;
@@ -144,7 +109,6 @@
       font-size: 0.85rem;
       color: <%= theme === 'dark' ? '#d1d5db' : '#555555' %>;
       margin-bottom: 12px;
-      line-height: 1.4;
     }
     .popup-close {
       position: absolute;
@@ -155,7 +119,6 @@
       font-size: 0.85rem;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#555555' %>;
       cursor: pointer;
-      transition: color 0.2s ease;
     }
     .popup-close:hover {
       color: #00b7ff;
@@ -169,17 +132,11 @@
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
       z-index: 999;
-      backdrop-filter: blur(2px);
-      transition: opacity 0.3s ease;
     }
     .overlay.show {
       display: block;
-      opacity: 1;
     }
     @media (max-width: 768px) {
-      body {
-        padding: 30px 16px 16px;
-      }
       .login-container {
         width: 100%;
         max-width: 300px;
@@ -195,60 +152,34 @@
         padding: 12px;
         font-size: 0.9rem;
       }
-      .login-container button {
-        padding: 14px;
-        margin: 16px 0 0;
-      }
       .popup {
         width: 80%;
         max-width: 280px;
         padding: 16px;
       }
     }
-    @media (max-width: 480px) {
-      .login-container {
-        max-width: 280px;
-      }
-      .login-container h2 {
-        font-size: 1.4rem;
-      }
-      .login-container p {
-        font-size: 0.8rem;
-      }
-      .login-container input, .login-container button {
-        font-size: 0.85rem;
-        padding: 10px;
-      }
-      .login-container button {
-        padding: 12px;
-        margin: 12px 0 0;
-      }
-      .popup {
-        max-width: 260px;
-      }
-    }
   </style>
 </head>
 <body>
   <div class="login-container">
-    <h2 id="login-header"><%- headerHtml %></h2>
-    <p id="login-subheader" style="color: <%= subheaderColor %>"><%= subheaderText %></p>
+    <h2 id="login-header"><%- headerHtml || 'Form Header' %></h2>
+    <p id="login-subheader" style="color: <%= subheaderColor || '#555555' %>"><%= subheaderText || 'Please fill out the form' %></p>
     <div id="input-fields">
-      <% fields.forEach(field => { %>
+      <% (fields || []).forEach(field => { %>
         <input 
-          type="<%= field.type %>" 
-          id="login-<%= field.id %>" 
-          placeholder="<%= field.placeholder %>" 
-          style="box-shadow: <%= borderShadow %>;"
+          type="<%= field.type || 'text' %>" 
+          id="login-<%= field.id || 'unknown' %>" 
+          placeholder="<%= field.placeholder || 'Enter value' %>" 
+          style="box-shadow: <%= borderShadow || '0 0 0 2px #000000' %>;"
           <%= field.validation && field.validation.required ? 'required' : '' %>
         >
       <% }) %>
     </div>
     <button 
       id="login-button" 
-      style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;"
+      style="background: <%= buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)' %>; color: <%= buttonTextColor || '#ffffff' %>;"
     >
-      <%= buttonText %>
+      <%= buttonText || 'Submit' %>
     </button>
   </div>
   <div class="overlay" id="message-overlay"></div>
@@ -260,134 +191,164 @@
 
   <script>
     (function() {
+      console.log('Form script initialized');
+      const loginButton = document.getElementById('login-button');
+      const messagePopup = document.getElementById('message-popup');
+      const messageOverlay = document.getElementById('message-overlay');
+      const messagePopupClose = document.getElementById('message-popup-close');
+      const messageText = document.getElementById('message-text');
+      const inputFieldsContainer = document.getElementById('input-fields');
+
+      if (!loginButton) {
+        console.error('Button with id "login-button" not found');
+        return;
+      }
+      if (!inputFieldsContainer) {
+        console.error('Input fields container not found');
+        return;
+      }
+
+      let templates = {};
       try {
-        const templates = JSON.parse('<%- templates %>');
-        const loginButton = document.getElementById('login-button');
-        const messagePopup = document.getElementById('message-popup');
-        const messageOverlay = document.getElementById('message-overlay');
-        const messagePopupClose = document.getElementById('message-popup-close');
-        const messageText = document.getElementById('message-text');
-        const inputFieldsContainer = document.getElementById('input-fields');
+        templates = JSON.parse('<%- templates || "{}" %>');
+        console.log('Templates loaded:', templates);
+      } catch (e) {
+        console.error('Error parsing templates:', e);
+        showMessagePopup('Error loading form configuration.');
+        return;
+      }
 
-        function normalizeUrl(url) {
-          if (!url) return null;
-          url = url.trim();
-          if (url.match(/^https?:\/\//)) return url;
-          if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
-          return null;
-        }
-
-        function showMessagePopup(message) {
-          messageText.textContent = message || 'Welcome! You have clicked the button.';
+      function showMessagePopup(message) {
+        if (messageText && messagePopup && messageOverlay) {
+          messageText.textContent = message || 'An error occurred.';
           messagePopup.classList.add('show');
           messageOverlay.classList.add('show');
+        } else {
+          console.error('Popup elements not found');
+          alert(message);
         }
+      }
 
-        function hideMessagePopup() {
+      function hideMessagePopup() {
+        if (messagePopup && messageOverlay) {
           messagePopup.classList.remove('show');
           messageOverlay.classList.remove('show');
         }
+      }
 
-        function checkFormFilled() {
-          const inputs = inputFieldsContainer.querySelectorAll('input');
-          const templateFields = templates['<%= template %>'].fields;
+      function normalizeUrl(url) {
+        if (!url) return null;
+        url = url.trim();
+        if (url.match(/^https?:\/\//)) return url;
+        if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
+        return null;
+      }
 
-          for (let i = 0; i < inputs.length; i++) {
-            const input = inputs[i];
-            const value = input.value.trim();
-            const fieldId = input.id.replace('login-', '');
-            const templateField = templateFields.find(field => field.id === fieldId);
+      function checkFormFilled() {
+        const inputs = inputFieldsContainer.querySelectorAll('input');
+        const templateFields = templates['<%= template || "sign-in" %>']?.fields || [];
 
-            if (!value && templateField?.validation?.required) {
-              showMessagePopup('Please fill all required fields before proceeding.');
-              return false;
-            }
+        for (let input of inputs) {
+          const value = input.value.trim();
+          const fieldId = input.id.replace('login-', '');
+          const templateField = templateFields.find(field => field.id === fieldId);
 
-            if (templateField?.validation?.regex) {
-              try {
-                const regex = new RegExp(templateField.validation.regex);
-                if (!regex.test(value)) {
-                  showMessagePopup(templateField.validation.errorMessage || 'Invalid input.');
-                  return false;
-                }
-              } catch (e) {
-                console.error('Invalid regex for field:', fieldId, e);
-                showMessagePopup('Validation error occurred.');
-                return false;
-              }
-            }
-          }
-          return true;
-        }
-
-        async function submitFormData() {
-          const inputs = inputFieldsContainer.querySelectorAll('input');
-          const formData = {};
-          inputs.forEach(input => {
-            const fieldId = input.id.replace('login-', '');
-            formData[fieldId] = input.value.trim();
-          });
-
-          try {
-            const response = await fetch('/form/<%= formId %>/submit', {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(formData)
-            });
-            const result = await response.json();
-            if (!response.ok) {
-              console.error('Submission failed:', result.error);
-              showMessagePopup(result.error || 'Failed to submit form.');
-              return false;
-            }
-            console.log('Submission successful:', result);
-            return true;
-          } catch (error) {
-            console.error('Error submitting form:', error);
-            showMessagePopup('An error occurred while submitting the form.');
+          if (!value && templateField?.validation?.required) {
+            showMessagePopup('Please fill all required fields.');
             return false;
           }
-        }
 
-        loginButton.addEventListener('click', async () => {
-          try {
-            if (!checkFormFilled()) return;
-            const submitted = await submitFormData();
-            if (!submitted) return;
-
-            const action = '<%= buttonAction %>';
-            const url = '<%= buttonUrl %>';
-            const message = '<%= buttonMessage %>';
-            console.log('Button clicked:', { action, url, message });
-
-            if (action === 'url') {
-              const normalizedUrl = normalizeUrl(url);
-              if (normalizedUrl) {
-                console.log('Redirecting to:', normalizedUrl);
-                window.location.href = normalizedUrl;
-              } else {
-                showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
+          if (templateField?.validation?.regex) {
+            try {
+              const regex = new RegExp(templateField.validation.regex);
+              if (!regex.test(value)) {
+                showMessagePopup(templateField.validation.errorMessage || 'Invalid input.');
+                return false;
               }
-            } else if (action === 'message') {
-              showMessagePopup(message || 'Form submitted successfully!');
-            } else {
-              console.error('Invalid button action:', action);
-              showMessagePopup('Error: Invalid button configuration.');
+            } catch (e) {
+              console.error('Invalid regex for field:', fieldId, e);
+              showMessagePopup('Validation error occurred.');
+              return false;
             }
-          } catch (error) {
-            console.error('Error in button click handler:', error);
-            showMessagePopup('An error occurred. Please try again.');
           }
+        }
+        return true;
+      }
+
+      async function submitFormData() {
+        const inputs = inputFieldsContainer.querySelectorAll('input');
+        const formData = {};
+        inputs.forEach(input => {
+          const fieldId = input.id.replace('login-', '');
+          formData[fieldId] = input.value.trim();
         });
 
-        messagePopupClose.addEventListener('click', hideMessagePopup);
-        messageOverlay.addEventListener('click', hideMessagePopup);
+        try {
+          const formId = '<%= formId || "" %>';
+          if (!formId) {
+            console.error('Form ID is missing');
+            showMessagePopup('Form configuration error.');
+            return false;
+          }
 
-      } catch (error) {
-        console.error('Error in form script:', error);
-        showMessagePopup('An error occurred. Please try again.');
+          const response = await fetch(`/form/${formId}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            console.error('Submission failed:', result.error);
+            showMessagePopup(result.error || 'Failed to submit form.');
+            return false;
+          }
+          console.log('Submission successful:', result);
+          return true;
+        } catch (error) {
+          console.error('Error submitting form:', error);
+          showMessagePopup('An error occurred while submitting the form.');
+          return false;
+        }
+      }
+
+      loginButton.addEventListener('click', async () => {
+        console.log('Button clicked');
+        try {
+          if (!checkFormFilled()) return;
+          const submitted = await submitFormData();
+          if (!submitted) return;
+
+          const action = '<%= buttonAction || "message" %>';
+          const url = '<%= buttonUrl || "" %>';
+          const message = '<%= buttonMessage || "Form submitted successfully!" %>';
+
+          console.log('Button action:', { action, url, message });
+
+          if (action === 'url') {
+            const normalizedUrl = normalizeUrl(url);
+            if (normalizedUrl) {
+              console.log('Redirecting to:', normalizedUrl);
+              window.location.href = normalizedUrl;
+            } else {
+              showMessagePopup('Invalid URL provided.');
+            }
+          } else if (action === 'message') {
+            showMessagePopup(message);
+          } else {
+            console.error('Invalid button action:', action);
+            showMessagePopup('Invalid button configuration.');
+          }
+        } catch (error) {
+          console.error('Button click error:', error);
+          showMessagePopup('An error occurred. Please try again.');
+        }
+      });
+
+      if (messagePopupClose) {
+        messagePopupClose.addEventListener('click', hideMessagePopup);
+      }
+      if (messageOverlay) {
+        messageOverlay.addEventListener('click', hideMessagePopup);
       }
     })();
   </script>
