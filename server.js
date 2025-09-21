@@ -269,6 +269,19 @@ async function isFormExpired(formId) {
   const createdTime = new Date(config.createdAt).getTime();
   const currentTime = Date.now();
   const isExpired = (currentTime - createdTime) > adminSettings.linkLifespan;
+  
+  if (isExpired) {
+    // Delete the expired form and its submissions
+    console.log(`Form ${formId} is expired, deleting form and submissions`);
+    delete formConfigs[formId];
+    await saveFormConfigs();
+    
+    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
+    const updatedSubmissions = submissions.filter(s => s.formId !== formId);
+    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
+    console.log(`Deleted form ${formId} and its submissions`);
+  }
+  
   console.log(`Form ${formId} expiration check: createdAt=${config.createdAt}, currentTime=${currentTime}, linkLifespan=${adminSettings.linkLifespan}, isExpired=${isExpired}`);
   return isExpired;
 }
@@ -510,26 +523,17 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
     await saveAdminSettings(adminSettings);
     console.log('Admin settings updated:', adminSettings);
 
-    // Clean up expired forms if restrictions are enabled
+    // Clean up any remaining expired forms if restrictions are enabled
     if (adminSettings.restrictionsEnabled) {
-      const now = Date.now();
-      const expiredFormIds = Object.keys(formConfigs).filter(formId => {
-        const config = formConfigs[formId];
-        if (!config.createdAt) return true;
-        const createdTime = new Date(config.createdAt).getTime();
-        return (now - createdTime) > lifespanMs;
-      });
-
-      for (const formId of expiredFormIds) {
-        delete formConfigs[formId];
-        const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-        const updatedSubmissions = submissions.filter(s => s.formId !== formId);
-        await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
+      const expiredFormIds = [];
+      for (const formId of Object.keys(formConfigs)) {
+        if (await isFormExpired(formId)) {
+          expiredFormIds.push(formId);
+        }
       }
 
       if (expiredFormIds.length > 0) {
-        await saveFormConfigs();
-        console.log(`Deleted ${expiredFormIds.length} expired forms`);
+        console.log(`Deleted ${expiredFormIds.length} expired forms during admin settings update`);
       }
     }
 
@@ -569,20 +573,17 @@ app.get('/get', verifyToken, async (req, res) => {
 
     // Filter form configs by user and check for expiration
     const userFormConfigs = {};
-    const expiredForms = [];
     const validForms = [];
     for (const [formId, config] of Object.entries(formConfigs)) {
       if (config.userId === userId) {
-        const isExpired = await isFormExpired(formId);
-        if (isExpired) {
-          expiredForms.push(formId);
-        } else {
+        const isExpired = await isFormExpired(formId); // This will delete the form if expired
+        if (!isExpired) {
           userFormConfigs[formId] = config;
           validForms.push(formId);
         }
       }
     }
-    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')}), ${expiredForms.length} expired (${expiredForms.join(', ')})`);
+    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')})`);
 
     const templates = {
       'sign-in': {
@@ -964,11 +965,13 @@ app.get('/form/:id', async (req, res) => {
   const formId = req.params.id;
   const config = formConfigs[formId];
   
-  // Check if form exists and is not expired
+  // Check if form exists
   if (!config) {
     console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
+  
+  // Check expiration (this will delete the form if expired)
   const adminSettings = await loadAdminSettings();
   if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
     return res.status(403).send('Form has expired');
