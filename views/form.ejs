@@ -81,7 +81,6 @@
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
     }
-    /* Add padding to password input to make space for the eye icon */
     .login-container input[type="password"], .login-container input[type="text"][id="login-password"] {
       padding-right: 40px;
     }
@@ -97,7 +96,6 @@
     .login-container input:not(:placeholder-shown) {
       background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
-    /* Style for the eye icon */
     .password-container {
       position: relative;
       width: 100%;
@@ -129,11 +127,37 @@
       cursor: pointer;
       font-weight: 500;
       box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3);
+      position: relative; /* For spinner positioning */
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .login-container button:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
       background: <%= buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : buttonColor %>;
+    }
+    /* Spinner styles */
+    .spinner {
+      display: none;
+      width: 20px;
+      height: 20px;
+      border: 3px solid transparent;
+      border-top-color: <%= buttonColor === '#000000' ? '#ffffff' : '#000000' %>;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 8px;
+    }
+    .spinner.show {
+      display: inline-block;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .login-container button.loading {
+      pointer-events: none; /* Disable clicks during loading */
+      opacity: 0.8;
     }
     .popup {
       display: none;
@@ -274,7 +298,10 @@
         <% } %>
       <% }) %>
     </div>
-    <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;"><%= buttonText %></button>
+    <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;">
+      <%= buttonText %>
+      <span class="spinner" id="login-spinner"></span>
+    </button>
   </div>
   <div class="overlay" id="message-overlay"></div>
   <div class="popup" id="message-popup" role="alertdialog" aria-labelledby="message-popup-title">
@@ -287,6 +314,7 @@
     const templates = <%- templates %>;
 
     const loginButton = document.getElementById('login-button');
+    const loginSpinner = document.getElementById('login-spinner');
     const messagePopup = document.getElementById('message-popup');
     const messageOverlay = document.getElementById('message-overlay');
     const messagePopupClose = document.getElementById('message-popup-close');
@@ -343,6 +371,8 @@
     }
 
     async function submitFormData() {
+      loginButton.classList.add('loading');
+      loginSpinner.classList.add('show');
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
       inputs.forEach(input => {
@@ -370,10 +400,12 @@
         console.error('Error submitting form:', error);
         showMessagePopup('An error occurred while submitting the form.');
         return false;
+      } finally {
+        loginButton.classList.remove('loading');
+        loginSpinner.classList.remove('show');
       }
     }
 
-    // Password toggle function
     function togglePassword(fieldId) {
       const passwordField = document.getElementById(`login-${fieldId}`);
       const toggleIcon = document.getElementById(`toggle-icon-${fieldId}`);
