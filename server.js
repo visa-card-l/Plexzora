@@ -19,6 +19,7 @@ const submissionsFile = path.join(DATA_DIR, 'submissions.json');
 const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
 const usersFile = path.join(DATA_DIR, 'users.json');
 const adminSettingsFile = path.join(DATA_DIR, 'adminSettings.json');
+const formCreationsFile = path.join(DATA_DIR, 'formCreations.json');
 
 // Ensure data directory exists
 async function ensureDataDir() {
@@ -55,6 +56,17 @@ async function initializeFormConfigsFile() {
   }
 }
 
+// Initialize form creations file
+async function initializeFormCreationsFile() {
+  try {
+    await fs.access(formCreationsFile);
+    console.log(`Form creations file exists: ${formCreationsFile}`);
+  } catch {
+    await fs.writeFile(formCreationsFile, JSON.stringify([]));
+    console.log('Created formCreations.json');
+  }
+}
+
 // Save formConfigs to file
 async function saveFormConfigs() {
   try {
@@ -62,6 +74,17 @@ async function saveFormConfigs() {
     console.log('Saved formConfigs to file');
   } catch (err) {
     console.error('Error saving formConfigs:', err.message, err.stack);
+    throw err;
+  }
+}
+
+// Save form creations to file
+async function saveFormCreations(formCreations) {
+  try {
+    await fs.writeFile(formCreationsFile, JSON.stringify(formCreations, null, 2));
+    console.log('Saved formCreations to file');
+  } catch (err) {
+    console.error('Error saving formCreations:', err.message, err.stack);
     throw err;
   }
 }
@@ -144,6 +167,17 @@ async function loadAdminSettings() {
   }
 }
 
+// Load form creations from file
+async function loadFormCreations() {
+  try {
+    const data = await fs.readFile(formCreationsFile, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error('Error loading form creations:', err.message);
+    return [];
+  }
+}
+
 // Load user by ID
 async function loadUserById(userId) {
   const users = await loadUsers();
@@ -184,6 +218,7 @@ let formConfigs = {};
     await ensureDataDir();
     await initializeSubmissionsFile();
     await initializeFormConfigsFile();
+    await initializeFormCreationsFile();
     await initializeUsersFile();
     await initializeAdminSettingsFile();
   } catch (err) {
@@ -293,9 +328,10 @@ async function countUserFormsToday(userId) {
   const todayStart = today.getTime();
   const todayEnd = todayStart + 24 * 60 * 60 * 1000; // End of today
 
-  const count = Object.values(formConfigs).filter(config => {
-    if (config.userId !== userId) return false;
-    const createdTime = new Date(config.createdAt).getTime();
+  const formCreations = await loadFormCreations();
+  const count = formCreations.filter(creation => {
+    if (creation.userId !== userId) return false;
+    const createdTime = new Date(creation.createdAt).getTime();
     return createdTime >= todayStart && createdTime < todayEnd;
   }).length;
 
@@ -681,6 +717,15 @@ app.post('/create', verifyToken, async (req, res) => {
     if (config.buttonAction === 'message' && !config.buttonMessage) {
       config.buttonMessage = 'Form submitted successfully!';
     }
+
+    // Store form creation record
+    const formCreations = await loadFormCreations();
+    formCreations.push({
+      userId,
+      formId,
+      createdAt: config.createdAt
+    });
+    await saveFormCreations(formCreations);
 
     formConfigs[formId] = config;
     console.log(`Stored form config for ${formId} for user ${userId}:`, config);
