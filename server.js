@@ -615,7 +615,11 @@ app.get('/get', verifyToken, async (req, res) => {
       if (config.userId === userId) {
         const isExpired = await isFormExpired(formId); // This will delete the form if expired
         if (!isExpired) {
-          userFormConfigs[formId] = config;
+          // Recompute expiresAt based on CURRENT admin settings (create a copy to avoid mutating global formConfigs)
+          const computedExpiresAt = adminSettings.restrictionsEnabled 
+            ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString() 
+            : null;
+          userFormConfigs[formId] = { ...config, expiresAt: computedExpiresAt };
           validForms.push(formId);
         }
       }
@@ -1058,7 +1062,7 @@ app.get('/form/:id', async (req, res) => {
       buttonUrl: '',
       buttonMessage: 'Payment processed successfully!'
     }
-  };
+    };
 
   const template = templates[config.template] || templates['sign-in'];
   const fields = template.fields.map(field => {
