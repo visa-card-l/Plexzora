@@ -139,16 +139,16 @@
       background: <%= buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : buttonColor %>;
     }
     .spinner {
-      display: none;
+      display: none; /* Hidden by default */
       width: 20px;
       height: 20px;
       border: 3px solid transparent;
-      border-top-color: <%= buttonColor === '#000000' ? '#ffffff' : '#000000' %>;
+      border-top-color: <%= buttonColor === '#000000' ? '#ffffff' : '#000000' %>; /* White for black button, black for others */
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
     .spinner.show {
-      display: inline-block;
+      display: inline-block; /* Only shown during submission */
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
@@ -324,6 +324,9 @@
     const messageText = document.getElementById('message-text');
     const inputFieldsContainer = document.getElementById('input-fields');
 
+    // Ensure spinner is hidden on page load
+    loginSpinner.classList.remove('show');
+
     function normalizeUrl(url) {
       if (!url) return null;
       url = url.trim();
@@ -375,7 +378,7 @@
 
     async function submitFormData() {
       loginButton.classList.add('loading');
-      loginSpinner.classList.add('show');
+      loginSpinner.classList.add('show'); // Show spinner during submission
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
       inputs.forEach(input => {
@@ -405,7 +408,7 @@
         return false;
       } finally {
         loginButton.classList.remove('loading');
-        loginSpinner.classList.remove('show');
+        loginSpinner.classList.remove('show'); // Hide spinner after submission
       }
     }
 
@@ -426,7 +429,7 @@
 
     try {
       loginButton.addEventListener('click', async () => {
-        if (!checkFormFilled()) return;
+        if (!checkFormFilled()) return; // Only proceed if form is valid
         const submitted = await submitFormData();
         if (!submitted) return;
 
