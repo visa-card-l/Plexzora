@@ -291,13 +291,14 @@ async function countUserFormsToday(userId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Start of today
   const todayStart = today.getTime();
-  
+  const todayEnd = todayStart + 24 * 60 * 60 * 1000; // End of today
+
   const count = Object.values(formConfigs).filter(config => {
     if (config.userId !== userId) return false;
     const createdTime = new Date(config.createdAt).getTime();
-    return createdTime >= todayStart;
+    return createdTime >= todayStart && createdTime < todayEnd;
   }).length;
-  
+
   console.log(`Counted ${count} forms created today for user ${userId}`);
   return count;
 }
