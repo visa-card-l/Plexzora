@@ -122,16 +122,23 @@
       cursor: not-allowed;
     }
     .spinner {
-      display: none;
+      border: 3px solid <%= buttonColor === '#000000' || buttonColor === 'black' ? '#ffffff' : '#000000' %>;
+      border-top: 3px solid <%= buttonColor === '#000000' || buttonColor === 'black' ? '#ffffff' : '#000000' %>;
+      border-radius: 50%;
       width: 16px;
       height: 16px;
-      border: 2px solid <%= buttonTextColor %>;
-      border-top: 2px solid transparent;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
+      animation: spin 0.6s linear infinite;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      margin: -8px 0 0 -8px;
+      display: none;
     }
-    .spinner.show {
-      display: inline-block;
+    .loading .spinner {
+      display: block;
+    }
+    .loading .button-text {
+      visibility: hidden;
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
@@ -265,7 +272,7 @@
     </div>
     <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;">
       <span class="button-text"><%= buttonText %></span>
-      <span class="spinner" style="display: none;"></span>
+      <div class="spinner"></div>
     </button>
   </div>
   <div class="overlay" id="message-overlay"></div>
@@ -374,8 +381,7 @@
         if (!checkFormFilled()) return;
 
         // Show spinner, hide button text, and disable button
-        spinner.classList.add('show');
-        buttonText.style.display = 'none';
+        loginButton.classList.add('loading');
         loginButton.disabled = true;
 
         try {
@@ -407,8 +413,7 @@
           showMessagePopup('An error occurred. Please try again.');
         } finally {
           // Hide spinner, show button text, and re-enable button
-          spinner.classList.remove('show');
-          buttonText.style.display = 'inline';
+          loginButton.classList.remove('loading');
           loginButton.disabled = false;
         }
       });
