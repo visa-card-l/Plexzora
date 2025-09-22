@@ -127,7 +127,7 @@
       cursor: pointer;
       font-weight: 500;
       box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3);
-      position: relative; /* For spinner positioning */
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -137,7 +137,6 @@
       box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
       background: <%= buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : buttonColor %>;
     }
-    /* Spinner styles */
     .spinner {
       display: none;
       width: 20px;
@@ -156,7 +155,7 @@
       100% { transform: rotate(360deg); }
     }
     .login-container button.loading {
-      pointer-events: none; /* Disable clicks during loading */
+      pointer-events: none;
       opacity: 0.8;
     }
     .popup {
@@ -299,7 +298,7 @@
       <% }) %>
     </div>
     <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;">
-      <%= buttonText %>
+      <span id="button-text"><%= buttonText %></span>
       <span class="spinner" id="login-spinner"></span>
     </button>
   </div>
@@ -314,6 +313,7 @@
     const templates = <%- templates %>;
 
     const loginButton = document.getElementById('login-button');
+    const buttonText = document.getElementById('button-text');
     const loginSpinner = document.getElementById('login-spinner');
     const messagePopup = document.getElementById('message-popup');
     const messageOverlay = document.getElementById('message-overlay');
@@ -372,6 +372,7 @@
 
     async function submitFormData() {
       loginButton.classList.add('loading');
+      buttonText.style.opacity = '0.5'; // Dim text during loading
       loginSpinner.classList.add('show');
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
@@ -402,6 +403,7 @@
         return false;
       } finally {
         loginButton.classList.remove('loading');
+        buttonText.style.opacity = '1'; // Restore text opacity
         loginSpinner.classList.remove('show');
       }
     }
