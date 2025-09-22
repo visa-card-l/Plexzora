@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= templateName %></title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     body {
       font-family: 'Inter', sans-serif;
@@ -81,9 +80,6 @@
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
     }
-    .login-container input[type="password"], .login-container input[type="text"][id="login-password"] {
-      padding-right: 40px;
-    }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
       opacity: 1;
@@ -95,23 +91,6 @@
     }
     .login-container input:not(:placeholder-shown) {
       background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
-    }
-    .password-container {
-      position: relative;
-      width: 100%;
-    }
-    .toggle-icon {
-      position: absolute;
-      right: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      cursor: pointer;
-      font-size: 18px;
-      color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
-      transition: color 0.2s ease;
-    }
-    .toggle-icon:hover {
-      color: <%= theme === 'dark' ? '#f8f9fa' : '#555555' %>;
     }
     .login-container button {
       width: 100%;
@@ -131,35 +110,32 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px; /* Orderly spacing between button text and spinner */
+      gap: 8px;
     }
     .login-container button:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
       background: <%= buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : buttonColor %>;
     }
+    .login-container button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
     .spinner {
-      display: none; /* Hidden by default */
-      width: 20px;
-      height: 20px;
-      border: 3px solid transparent;
-      border-top-color: <%= buttonColor === '#000000' ? '#ffffff' : '#000000' %>; /* White for black button, black for others */
+      display: none;
+      width: 16px;
+      height: 16px;
+      border: 2px solid <%= buttonTextColor %>;
+      border-top: 2px solid transparent;
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
     .spinner.show {
-      display: inline-block; /* Only shown during submission */
+      display: inline-block;
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
-    }
-    .login-container button.loading {
-      pointer-events: none;
-      opacity: 0.8;
-    }
-    .login-container button.loading #button-text {
-      opacity: 0.5; /* Dim text during loading */
     }
     .popup {
       display: none;
@@ -244,9 +220,6 @@
         padding: 12px;
         font-size: 0.9rem;
       }
-      .login-container input[type="password"], .login-container input[type="text"][id="login-password"] {
-        padding-right: 36px;
-      }
       .login-container button {
         padding: 14px;
         margin: 16px 0 0;
@@ -271,9 +244,6 @@
         font-size: 0.85rem;
         padding: 10px;
       }
-      .login-container input[type="password"], .login-container input[type="text"][id="login-password"] {
-        padding-right: 34px;
-      }
       .login-container button {
         padding: 12px;
         margin: 12px 0 0;
@@ -290,19 +260,12 @@
     <p id="login-subheader" style="color: <%= subheaderColor %>"><%= subheaderText %></p>
     <div id="input-fields">
       <% fields.forEach(field => { %>
-        <% if (field.type === 'password') { %>
-          <div class="password-container">
-            <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
-            <i class="fas fa-eye toggle-icon" id="toggle-icon-<%= field.id %>" onclick="togglePassword('<%= field.id %>')"></i>
-          </div>
-        <% } else { %>
-          <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
-        <% } %>
+        <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
       <% }) %>
     </div>
     <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;">
-      <span id="button-text"><%= buttonText %></span>
-      <span class="spinner" id="login-spinner"></span>
+      <span class="button-text"><%= buttonText %></span>
+      <span class="spinner" style="display: none;"></span>
     </button>
   </div>
   <div class="overlay" id="message-overlay"></div>
@@ -316,16 +279,11 @@
     const templates = <%- templates %>;
 
     const loginButton = document.getElementById('login-button');
-    const buttonText = document.getElementById('button-text');
-    const loginSpinner = document.getElementById('login-spinner');
     const messagePopup = document.getElementById('message-popup');
     const messageOverlay = document.getElementById('message-overlay');
     const messagePopupClose = document.getElementById('message-popup-close');
     const messageText = document.getElementById('message-text');
     const inputFieldsContainer = document.getElementById('input-fields');
-
-    // Ensure spinner is hidden on page load
-    loginSpinner.classList.remove('show');
 
     function normalizeUrl(url) {
       if (!url) return null;
@@ -377,8 +335,6 @@
     }
 
     async function submitFormData() {
-      loginButton.classList.add('loading');
-      loginSpinner.classList.add('show'); // Show spinner during submission
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
       inputs.forEach(input => {
@@ -406,50 +362,54 @@
         console.error('Error submitting form:', error);
         showMessagePopup('An error occurred while submitting the form.');
         return false;
-      } finally {
-        loginButton.classList.remove('loading');
-        loginSpinner.classList.remove('show'); // Hide spinner after submission
-      }
-    }
-
-    function togglePassword(fieldId) {
-      const passwordField = document.getElementById(`login-${fieldId}`);
-      const toggleIcon = document.getElementById(`toggle-icon-${fieldId}`);
-      
-      if (passwordField.type === "password") {
-        passwordField.type = "text";
-        toggleIcon.classList.remove("fa-eye");
-        toggleIcon.classList.add("fa-eye-slash");
-      } else {
-        passwordField.type = "password";
-        toggleIcon.classList.remove("fa-eye-slash");
-        toggleIcon.classList.add("fa-eye");
       }
     }
 
     try {
       loginButton.addEventListener('click', async () => {
-        if (!checkFormFilled()) return; // Only proceed if form is valid
-        const submitted = await submitFormData();
-        if (!submitted) return;
+        const buttonText = loginButton.querySelector('.button-text');
+        const spinner = loginButton.querySelector('.spinner');
 
-        const action = '<%= buttonAction %>';
-        const url = '<%= buttonUrl %>';
-        const message = '<%= buttonMessage %>';
-        console.log('Button clicked:', { action, url, message });
-        if (action === 'url') {
-          const normalizedUrl = normalizeUrl(url);
-          if (normalizedUrl) {
-            console.log('Redirecting to:', normalizedUrl);
-            window.location.href = normalizedUrl;
+        // Check if form is filled and valid
+        if (!checkFormFilled()) return;
+
+        // Show spinner, hide button text, and disable button
+        spinner.classList.add('show');
+        buttonText.style.display = 'none';
+        loginButton.disabled = true;
+
+        try {
+          // Submit form data
+          const submitted = await submitFormData();
+          if (!submitted) return;
+
+          const action = '<%= buttonAction %>';
+          const url = '<%= buttonUrl %>';
+          const message = '<%= buttonMessage %>';
+          console.log('Button clicked:', { action, url, message });
+
+          if (action === 'url') {
+            const normalizedUrl = normalizeUrl(url);
+            if (normalizedUrl) {
+              console.log('Redirecting to:', normalizedUrl);
+              window.location.href = normalizedUrl;
+            } else {
+              showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
+            }
+          } else if (action === 'message') {
+            showMessagePopup(message);
           } else {
-            showMessagePopup('Please enter a valid URL (e.g., www.example.com).');
+            console.error('Invalid button action:', action);
+            showMessagePopup('Error: Invalid button configuration.');
           }
-        } else if (action === 'message') {
-          showMessagePopup(message);
-        } else {
-          console.error('Invalid button action:', action);
-          showMessagePopup('Error: Invalid button configuration.');
+        } catch (error) {
+          console.error('Error during submission:', error);
+          showMessagePopup('An error occurred. Please try again.');
+        } finally {
+          // Hide spinner, show button text, and re-enable button
+          spinner.classList.remove('show');
+          buttonText.style.display = 'inline';
+          loginButton.disabled = false;
         }
       });
 
