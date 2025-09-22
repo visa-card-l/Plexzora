@@ -131,6 +131,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 8px; /* Orderly spacing between button text and spinner */
     }
     .login-container button:hover {
       transform: translateY(-2px);
@@ -145,7 +146,6 @@
       border-top-color: <%= buttonColor === '#000000' ? '#ffffff' : '#000000' %>;
       border-radius: 50%;
       animation: spin 1s linear infinite;
-      margin-left: 8px;
     }
     .spinner.show {
       display: inline-block;
@@ -157,6 +157,9 @@
     .login-container button.loading {
       pointer-events: none;
       opacity: 0.8;
+    }
+    .login-container button.loading #button-text {
+      opacity: 0.5; /* Dim text during loading */
     }
     .popup {
       display: none;
@@ -372,7 +375,6 @@
 
     async function submitFormData() {
       loginButton.classList.add('loading');
-      buttonText.style.opacity = '0.5'; // Dim text during loading
       loginSpinner.classList.add('show');
       const inputs = inputFieldsContainer.querySelectorAll('input');
       const formData = {};
@@ -403,7 +405,6 @@
         return false;
       } finally {
         loginButton.classList.remove('loading');
-        buttonText.style.opacity = '1'; // Restore text opacity
         loginSpinner.classList.remove('show');
       }
     }
