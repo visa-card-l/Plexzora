@@ -71,10 +71,11 @@
     .input-container {
       position: relative;
       width: 100%;
+      box-sizing: border-box; /* Ensure consistent box-sizing */
     }
     .login-container input {
       width: 100%;
-      padding: 14px;
+      padding: 16px; /* Match button padding */
       margin: 8px 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -102,7 +103,7 @@
     }
     .login-container button {
       width: 100%;
-      padding: 16px;
+      padding: 16px; /* Already matched with input */
       margin: 20px 0 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -245,15 +246,15 @@
         font-size: 0.8rem;
       }
       .login-container input, .login-container button {
-        padding: 12px;
+        padding: 14px; /* Match button and input padding */
         font-size: 0.9rem;
+      }
+      .login-container input[type="password"] {
+        padding-right: 36px; /* Adjusted for toggle icon */
       }
       .login-container button {
         padding: 14px;
         margin: 16px 0 0;
-      }
-      .login-container input[type="password"] {
-        padding-right: 36px;
       }
       .popup {
         width: 80%;
@@ -273,14 +274,14 @@
       }
       .login-container input, .login-container button {
         font-size: 0.85rem;
-        padding: 10px;
+        padding: 12px; /* Match button and input padding */
+      }
+      .login-container input[type="password"] {
+        padding-right: 32px; /* Adjusted for toggle icon */
       }
       .login-container button {
         padding: 12px;
         margin: 12px 0 0;
-      }
-      .login-container input[type="password"] {
-        padding-right: 32px;
       }
       .popup {
         max-width: 260px;
