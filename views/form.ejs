@@ -25,7 +25,7 @@
       padding: 24px;
       border-radius: 16px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
-      width: 320px;
+      width: 360px; /* Increased width from 320px */
       min-height: <%= minHeight %>;
       height: auto;
       text-align: center;
@@ -87,7 +87,7 @@
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
     }
     .login-container input[type="password"] {
-      padding-right: 40px; /* Space for toggle icon */
+      padding: 16px; /* Consistent padding for all inputs */
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
@@ -103,7 +103,7 @@
     }
     .login-container button {
       width: 100%;
-      padding: 16px; /* Already matched with input */
+      padding: 16px; /* Match input padding */
       margin: 20px 0 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -155,7 +155,7 @@
     }
     .toggle-password {
       position: absolute;
-      right: 10px;
+      right: 16px; /* Align with input padding */
       top: 50%;
       transform: translateY(-50%);
       cursor: pointer;
@@ -236,7 +236,7 @@
       }
       .login-container {
         width: 100%;
-        max-width: 300px;
+        max-width: 340px; /* Increased from 300px */
         padding: 20px;
       }
       .login-container h2 {
@@ -250,11 +250,14 @@
         font-size: 0.9rem;
       }
       .login-container input[type="password"] {
-        padding-right: 36px; /* Adjusted for toggle icon */
+        padding: 14px; /* Consistent padding */
       }
       .login-container button {
         padding: 14px;
         margin: 16px 0 0;
+      }
+      .toggle-password {
+        right: 14px; /* Match input padding */
       }
       .popup {
         width: 80%;
@@ -264,7 +267,7 @@
     }
     @media (max-width: 480px) {
       .login-container {
-        max-width: 280px;
+        max-width: 320px; /* Increased from 280px */
       }
       .login-container h2 {
         font-size: 1.4rem;
@@ -277,11 +280,14 @@
         padding: 12px; /* Match button and input padding */
       }
       .login-container input[type="password"] {
-        padding-right: 32px; /* Adjusted for toggle icon */
+        padding: 12px; /* Consistent padding */
       }
       .login-container button {
         padding: 12px;
         margin: 12px 0 0;
+      }
+      .toggle-password {
+        right: 12px; /* Match input padding */
       }
       .popup {
         max-width: 260px;
