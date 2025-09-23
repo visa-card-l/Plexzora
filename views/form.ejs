@@ -74,7 +74,7 @@
     }
     .login-container input {
       width: 100%;
-      padding: 14px;
+      padding: 14px 40px 14px 14px; /* Consistent padding for all inputs */
       margin: 8px 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -84,9 +84,6 @@
       box-shadow: <%= borderShadow %>;
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
-    }
-    .login-container input[type="password"] {
-      padding-right: 40px; /* Space for toggle icon */
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
@@ -245,15 +242,12 @@
         font-size: 0.8rem;
       }
       .login-container input, .login-container button {
-        padding: 12px;
+        padding: 12px 40px 12px 12px; /* Adjusted padding for responsiveness */
         font-size: 0.9rem;
       }
       .login-container button {
         padding: 14px;
         margin: 16px 0 0;
-      }
-      .login-container input[type="password"] {
-        padding-right: 36px;
       }
       .popup {
         width: 80%;
@@ -273,14 +267,11 @@
       }
       .login-container input, .login-container button {
         font-size: 0.85rem;
-        padding: 10px;
+        padding: 10px 40px 10px 10px; /* Adjusted padding for smaller screens */
       }
       .login-container button {
         padding: 12px;
         margin: 12px 0 0;
-      }
-      .login-container input[type="password"] {
-        padding-right: 32px;
       }
       .popup {
         max-width: 260px;
