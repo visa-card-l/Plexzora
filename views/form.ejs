@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= templateName %></title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
     body {
       font-family: 'Inter', sans-serif;
@@ -144,6 +145,23 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    .input-container {
+      position: relative;
+      width: 100%;
+    }
+    .toggle-password {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: <%= theme === 'dark' ? '#b0b8cc' : '#555555' %>;
+      font-size: 1rem;
+      transition: color 0.2s ease;
+    }
+    .toggle-password:hover {
+      color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
+    }
     .popup {
       display: none;
       position: fixed;
@@ -267,7 +285,12 @@
     <p id="login-subheader" style="color: <%= subheaderColor %>"><%= subheaderText %></p>
     <div id="input-fields">
       <% fields.forEach(field => { %>
-        <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
+        <div class="input-container">
+          <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
+          <% if (field.type === 'password') { %>
+            <i class="fas fa-eye toggle-password" data-input="login-<%= field.id %>"></i>
+          <% } %>
+        </div>
       <% }) %>
     </div>
     <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;">
@@ -371,6 +394,24 @@
         return false;
       }
     }
+
+    // Password toggle functionality
+    const togglePasswordButtons = document.querySelectorAll('.toggle-password');
+    togglePasswordButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const inputId = button.getAttribute('data-input');
+        const input = document.getElementById(inputId);
+        if (input.type === 'password') {
+          input.type = 'text';
+          button.classList.remove('fa-eye');
+          button.classList.add('fa-eye-slash');
+        } else {
+          input.type = 'password';
+          button.classList.remove('fa-eye-slash');
+          button.classList.add('fa-eye');
+        }
+      });
+    });
 
     try {
       loginButton.addEventListener('click', async () => {
