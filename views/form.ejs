@@ -68,6 +68,10 @@
       width: 4px;
       display: inline-block;
     }
+    .input-container {
+      position: relative;
+      width: 100%;
+    }
     .login-container input {
       width: 100%;
       padding: 14px;
@@ -80,6 +84,9 @@
       box-shadow: <%= borderShadow %>;
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
+    }
+    .login-container input[type="password"] {
+      padding-right: 40px; /* Space for toggle icon */
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
@@ -144,10 +151,6 @@
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
-    }
-    .input-container {
-      position: relative;
-      width: 100%;
     }
     .toggle-password {
       position: absolute;
@@ -249,6 +252,9 @@
         padding: 14px;
         margin: 16px 0 0;
       }
+      .login-container input[type="password"] {
+        padding-right: 36px;
+      }
       .popup {
         width: 80%;
         max-width: 280px;
@@ -272,6 +278,9 @@
       .login-container button {
         padding: 12px;
         margin: 12px 0 0;
+      }
+      .login-container input[type="password"] {
+        padding-right: 32px;
       }
       .popup {
         max-width: 260px;
