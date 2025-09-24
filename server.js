@@ -209,30 +209,7 @@ async function loadUserById(userId) {
   return users.find(u => u.id === userId);
 }
 
-// Utility to check if user has an active subscription
-async function hasActiveSubscription(userId) {
-  try {
-    const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
-    const userSubscription = subscriptions.find(
-      sub => sub.userId === userId && sub.status === 'active'
-    );
-    
-    if (!userSubscription) {
-      console.log(`No active subscription found for user ${userId}`);
-      return false;
-    }
-
-    const endDate = new Date(userSubscription.endDate);
-    const isActive = endDate > new Date();
-    console.log(`Subscription status for user ${userId}: ${isActive ? 'Active' : 'Expired'}`);
-    return isActive;
-  } catch (error) {
-    console.error(`Error checking subscription for user ${userId}:`, error.message);
-    return false;
-  }
-}
-
-// JWT verification middleware
+// JWT verification middleware (renamed to authenticateToken for clarity)
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -271,7 +248,7 @@ let formConfigs = {};
     await initializeFormCreationsFile();
     await initializeUsersFile();
     await initializeAdminSettingsFile();
-    await initializeSubscriptionsFile();
+    await initializeSubscriptionsFile(); // Initialize subscriptions file
   } catch (err) {
     console.error('Initialization failed:', err.message, err.stack);
     process.exit(1);
@@ -403,6 +380,7 @@ app.get('/user', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
+    // Return user info without sensitive data
     const { id, username, email, createdAt } = user;
     res.json({ 
       user: { id, username, email, createdAt },
@@ -722,16 +700,10 @@ app.post('/create', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const adminSettings = await loadAdminSettings();
     
-    // Check if user has an active subscription
-    const isSubscribed = await hasActiveSubscription(userId);
-    
-    // Apply restrictions only if user is not subscribed and restrictions are enabled
-    if (!isSubscribed && adminSettings.restrictionsEnabled) {
+    if (adminSettings.restrictionsEnabled) {
       const userFormCountToday = await countUserFormsToday(userId);
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
-        return res.status(403).json({ 
-          error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` 
-        });
+        return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
       }
     }
 
@@ -758,9 +730,7 @@ app.post('/create', authenticateToken, async (req, res) => {
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
       createdAt: new Date().toISOString(),
-      expiresAt: adminSettings.restrictionsEnabled && !isSubscribed 
-        ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() 
-        : null
+      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
