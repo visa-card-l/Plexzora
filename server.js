@@ -20,6 +20,7 @@ const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
 const usersFile = path.join(DATA_DIR, 'users.json');
 const adminSettingsFile = path.join(DATA_DIR, 'adminSettings.json');
 const formCreationsFile = path.join(DATA_DIR, 'formCreations.json');
+const subscriptionsFile = path.join(DATA_DIR, 'subscriptions.json');
 
 // Ensure data directory exists
 async function ensureDataDir() {
@@ -64,6 +65,17 @@ async function initializeFormCreationsFile() {
   } catch {
     await fs.writeFile(formCreationsFile, JSON.stringify([]));
     console.log('Created formCreations.json');
+  }
+}
+
+// Initialize subscriptions file
+async function initializeSubscriptionsFile() {
+  try {
+    await fs.access(subscriptionsFile);
+    console.log(`Subscriptions file exists: ${subscriptionsFile}`);
+  } catch {
+    await fs.writeFile(subscriptionsFile, JSON.stringify([]));
+    console.log('Created subscriptions.json');
   }
 }
 
@@ -221,11 +233,16 @@ let formConfigs = {};
     await initializeFormCreationsFile();
     await initializeUsersFile();
     await initializeAdminSettingsFile();
+    await initializeSubscriptionsFile();
   } catch (err) {
     console.error('Initialization failed:', err.message, err.stack);
     process.exit(1);
   }
 })();
+
+// Mount subscription router
+const subscriptionRouter = require('./subscription');
+app.use('/api/subscription', subscriptionRouter);
 
 // Middleware - Updated CORS configuration
 app.use(cors({
@@ -290,6 +307,17 @@ async function isFormExpired(formId) {
     return true;
   }
   
+  // Check subscription status
+  const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
+  const subscription = subscriptions.find(s => s.userId === config.userId);
+  const now = new Date();
+  const hasActiveSubscription = subscription && new Date(subscription.startDate) <= now && new Date(subscription.endDate) >= now;
+
+  if (hasActiveSubscription) {
+    console.log(`Form ${formId}: Premium user, no expiration`);
+    return false;
+  }
+
   const adminSettings = await loadAdminSettings();
   if (!adminSettings.restrictionsEnabled) {
     console.log(`Restrictions disabled for form ${formId}, assuming not expired`);
@@ -306,7 +334,6 @@ async function isFormExpired(formId) {
   const isExpired = (currentTime - createdTime) > adminSettings.linkLifespan;
   
   if (isExpired) {
-    // Delete the expired form and its submissions
     console.log(`Form ${formId} is expired, deleting form and submissions`);
     delete formConfigs[formId];
     await saveFormConfigs();
@@ -679,12 +706,20 @@ app.post('/create', verifyToken, async (req, res) => {
     console.log('Received /create request:', req.body);
     const userId = req.user.userId;
     const adminSettings = await loadAdminSettings();
-    
-    // Check form limit if restrictions are enabled
-    if (adminSettings.restrictionsEnabled) {
+
+    // Check subscription status
+    const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
+    const subscription = subscriptions.find(s => s.userId === userId);
+    const now = new Date();
+    const hasActiveSubscription = subscription && new Date(subscription.startDate) <= now && new Date(subscription.endDate) >= now;
+
+    // Apply form limit check only for non-premium users
+    if (adminSettings.restrictionsEnabled && !hasActiveSubscription) {
       const userFormCountToday = await countUserFormsToday(userId);
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
-        return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
+        return res.status(403).json({
+          error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached. Upgrade to premium for unlimited forms.`
+        });
       }
     }
 
@@ -711,7 +746,7 @@ app.post('/create', verifyToken, async (req, res) => {
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
       createdAt: new Date().toISOString(),
-      expiresAt: adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null
+      expiresAt: adminSettings.restrictionsEnabled && !hasActiveSubscription ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -1062,7 +1097,7 @@ app.get('/form/:id', async (req, res) => {
       buttonUrl: '',
       buttonMessage: 'Payment processed successfully!'
     }
-    };
+  };
 
   const template = templates[config.template] || templates['sign-in'];
   const fields = template.fields.map(field => {
