@@ -647,7 +647,22 @@ app.get('/get', authenticateToken, async (req, res) => {
     const adminSettings = await loadAdminSettings();
     console.log(`Loaded admin settings:`, adminSettings);
 
-    const isSubscribed = await hasActiveSubscription(userId); // Added: Check subscription status
+    const isSubscribed = await hasActiveSubscription(userId);
+    let subscriptionDetails = null;
+    if (isSubscribed) {
+      const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
+      const activeSubscription = subscriptions.find(sub => 
+        sub.userId === userId && 
+        sub.status === 'active' && 
+        new Date(sub.endDate) > new Date()
+      );
+      if (activeSubscription) {
+        subscriptionDetails = {
+          billingPeriod: activeSubscription.billingPeriod,
+          endDate: activeSubscription.endDate
+        };
+      }
+    }
 
     const userSubmissions = submissions.filter(s => s.userId === userId);
     console.log(`Filtered ${userSubmissions.length} submissions for user ${userId}`);
@@ -658,7 +673,7 @@ app.get('/get', authenticateToken, async (req, res) => {
       if (config.userId === userId) {
         const isExpired = await isFormExpired(formId);
         if (!isExpired) {
-          const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed) // Modified: Only compute expiresAt for non-subscribed users
+          const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed)
             ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
             : null;
           userFormConfigs[formId] = { ...config, expiresAt: computedExpiresAt };
@@ -698,16 +713,16 @@ app.get('/get', authenticateToken, async (req, res) => {
       formConfigs: userFormConfigs,
       templates,
       userId,
-      isSubscribed, // Added: Include subscription status for frontend
-      maxFormsPerUserPerDay: adminSettings.restrictionsEnabled ? adminSettings.maxFormsPerUserPerDay : null
+      isSubscribed,
+      subscriptionDetails
     };
     console.log(`Returning data for user ${userId}:`, {
       submissionCount: responseData.submissions.length,
       formConfigCount: Object.keys(responseData.formConfigs).length,
       templateKeys: Object.keys(responseData.templates),
       userId: responseData.userId,
-      isSubscribed: responseData.isSubscribed, // Added
-      maxFormsPerUserPerDay: responseData.maxFormsPerUserPerDay
+      isSubscribed: responseData.isSubscribed,
+      subscriptionDetails: responseData.subscriptionDetails
     });
 
     res.json(responseData);
@@ -808,7 +823,7 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
-    const isSubscribed = await hasActiveSubscription(userId); // Added: Check subscription status
+    const isSubscribed = await hasActiveSubscription(userId);
 
     const validActions = ['url', 'message'];
     const config = {
@@ -832,7 +847,7 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
       theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : formConfigs[formId].theme || 'light',
       createdAt: formConfigs[formId].createdAt,
       updatedAt: new Date().toISOString(),
-      expiresAt: (adminSettings.restrictionsEnabled && !isSubscribed) // Modified: Only set expiresAt for non-subscribed users
+      expiresAt: (adminSettings.restrictionsEnabled && !isSubscribed)
         ? new Date(new Date(formConfigs[formId].createdAt).getTime() + adminSettings.linkLifespan).toISOString()
         : null
     };
