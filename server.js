@@ -6,23 +6,23 @@ const fs = require('fs').promises;
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const axios = require('axios'); // Added for Paystack API
-require('dotenv').config(); // Load environment variables
+const axios = require('axios');
+require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here'; // Fallback for local dev
-const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10); // Pre-hashed admin password
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY; // Paystack secret key
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
-// Use persistent path for Render (set DATA_DIR=/data in Render env vars)
+// Use persistent path for Render
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const submissionsFile = path.join(DATA_DIR, 'submissions.json');
 const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
 const usersFile = path.join(DATA_DIR, 'users.json');
 const adminSettingsFile = path.join(DATA_DIR, 'adminSettings.json');
 const formCreationsFile = path.join(DATA_DIR, 'formCreations.json');
-const subscriptionsFile = path.join(DATA_DIR, 'subscriptions.json'); // New file for subscriptions
+const subscriptionsFile = path.join(DATA_DIR, 'subscriptions.json');
 
 // Ensure data directory exists
 async function ensureDataDir() {
@@ -78,10 +78,10 @@ async function initializeAdminSettingsFile() {
   } catch {
     await fs.writeFile(adminSettingsFile, JSON.stringify({
       linkLifespan: 604800000, // Default: 7 days in milliseconds
-      linkLifespanValue: 7, // Default: 7
-      linkLifespanUnit: 'days', // Default: days
-      maxFormsPerUserPerDay: 10, // Default: 10 forms per user per day
-      restrictionsEnabled: true // Default: restrictions enabled
+      linkLifespanValue: 7,
+      linkLifespanUnit: 'days',
+      maxFormsPerUserPerDay: 10,
+      restrictionsEnabled: true
     }));
     console.log('Created adminSettings.json');
   }
@@ -273,7 +273,7 @@ let formConfigs = {};
   }
 })();
 
-// Middleware - Updated CORS configuration
+// Middleware
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -647,6 +647,8 @@ app.get('/get', authenticateToken, async (req, res) => {
     const adminSettings = await loadAdminSettings();
     console.log(`Loaded admin settings:`, adminSettings);
 
+    const isSubscribed = await hasActiveSubscription(userId); // Added: Check subscription status
+
     const userSubmissions = submissions.filter(s => s.userId === userId);
     console.log(`Filtered ${userSubmissions.length} submissions for user ${userId}`);
 
@@ -656,8 +658,8 @@ app.get('/get', authenticateToken, async (req, res) => {
       if (config.userId === userId) {
         const isExpired = await isFormExpired(formId);
         if (!isExpired) {
-          const computedExpiresAt = adminSettings.restrictionsEnabled 
-            ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString() 
+          const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed) // Modified: Only compute expiresAt for non-subscribed users
+            ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
             : null;
           userFormConfigs[formId] = { ...config, expiresAt: computedExpiresAt };
           validForms.push(formId);
@@ -696,6 +698,7 @@ app.get('/get', authenticateToken, async (req, res) => {
       formConfigs: userFormConfigs,
       templates,
       userId,
+      isSubscribed, // Added: Include subscription status for frontend
       maxFormsPerUserPerDay: adminSettings.restrictionsEnabled ? adminSettings.maxFormsPerUserPerDay : null
     };
     console.log(`Returning data for user ${userId}:`, {
@@ -703,6 +706,7 @@ app.get('/get', authenticateToken, async (req, res) => {
       formConfigCount: Object.keys(responseData.formConfigs).length,
       templateKeys: Object.keys(responseData.templates),
       userId: responseData.userId,
+      isSubscribed: responseData.isSubscribed, // Added
       maxFormsPerUserPerDay: responseData.maxFormsPerUserPerDay
     });
 
@@ -720,10 +724,8 @@ app.post('/create', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const adminSettings = await loadAdminSettings();
     
-    // Check if user has an active subscription
     const isSubscribed = await hasActiveSubscription(userId);
     
-    // Apply restrictions only if user is not subscribed and restrictions are enabled
     if (!isSubscribed && adminSettings.restrictionsEnabled) {
       const userFormCountToday = await countUserFormsToday(userId);
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
@@ -806,6 +808,8 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
+    const isSubscribed = await hasActiveSubscription(userId); // Added: Check subscription status
+
     const validActions = ['url', 'message'];
     const config = {
       userId,
@@ -828,7 +832,9 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
       theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : formConfigs[formId].theme || 'light',
       createdAt: formConfigs[formId].createdAt,
       updatedAt: new Date().toISOString(),
-      expiresAt: adminSettings.restrictionsEnabled ? new Date(new Date(formConfigs[formId].createdAt).getTime() + adminSettings.linkLifespan).toISOString() : null
+      expiresAt: (adminSettings.restrictionsEnabled && !isSubscribed) // Modified: Only set expiresAt for non-subscribed users
+        ? new Date(new Date(formConfigs[formId].createdAt).getTime() + adminSettings.linkLifespan).toISOString()
+        : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
