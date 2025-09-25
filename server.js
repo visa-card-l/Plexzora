@@ -206,7 +206,7 @@ async function loadFormCreations() {
 // Load subscriptions from file
 async function loadSubscriptions() {
   try {
-    const data = await fs.readFile(submissionsFile, 'utf8');
+    const data = await fs.readFile(subscriptionsFile, 'utf8');
     return JSON.parse(data);
   } catch (err) {
     console.error('Error loading subscriptions:', err.message);
