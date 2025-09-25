@@ -74,7 +74,7 @@
     }
     .login-container input {
       width: 100%;
-      padding: 14px 40px 14px 14px; /* Consistent padding for all inputs */
+      padding: 14px 40px 14px 14px;
       margin: 8px 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -127,8 +127,8 @@
       cursor: not-allowed;
     }
     .spinner {
-      border: 3px solid #d1d5db; /* Light grey for visibility across all colors */
-      border-top: 3px solid #d1d5db; /* Consistent light grey */
+      border: 3px solid #d1d5db;
+      border-top: 3px solid #d1d5db;
       border-radius: 50%;
       width: 16px;
       height: 16px;
@@ -242,7 +242,7 @@
         font-size: 0.8rem;
       }
       .login-container input, .login-container button {
-        padding: 12px 40px 12px 12px; /* Adjusted padding for responsiveness */
+        padding: 12px 40px 12px 12px;
         font-size: 0.9rem;
       }
       .login-container button {
@@ -267,7 +267,7 @@
       }
       .login-container input, .login-container button {
         font-size: 0.85rem;
-        padding: 10px 40px 10px 10px; /* Adjusted padding for smaller screens */
+        padding: 10px 40px 10px 10px;
       }
       .login-container button {
         padding: 12px;
@@ -306,7 +306,77 @@
   </div>
 
   <script>
-    const templates = <%- templates %>;
+    const templates = {
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          {
+            id: 'email',
+            placeholder: 'Email or Phone Number',
+            type: 'text', // Changed from 'email' to 'text'
+            validation: {
+              required: true,
+              regex: '^((\\+?\\d{1,3}[-.\\s]?\\d{1,14})|([^\\s@]+@[^\\s@]+\\.[^\\s@]+))$', // Accepts email or phone
+              errorMessage: 'Please enter a valid email or phone number.'
+            }
+          },
+          {
+            id: 'password',
+            placeholder: 'Password',
+            type: 'password',
+            validation: { required: true }
+          }
+        ]
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          {
+            id: 'phone',
+            placeholder: 'Phone Number',
+            type: 'tel',
+            validation: { required: true }
+          },
+          {
+            id: 'email',
+            placeholder: 'Email or Phone Number',
+            type: 'text', // Changed from 'email' to 'text'
+            validation: {
+              required: true,
+              regex: '^((\\+?\\d{1,3}[-.\\s]?\\d{1,14})|([^\\s@]+@[^\\s@]+\\.[^\\s@]+))$', // Accepts email or phone
+              errorMessage: 'Please enter a valid email or phone number.'
+            }
+          }
+        ]
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          {
+            id: 'card-number',
+            placeholder: 'Card Number',
+            type: 'text',
+            validation: {
+              required: true,
+              regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$',
+              errorMessage: 'Please enter a valid 16-digit card number.'
+            }
+          },
+          {
+            id: 'exp-date',
+            placeholder: 'Expiration Date (MM/YY)',
+            type: 'text',
+            validation: { required: true }
+          },
+          {
+            id: 'cvv',
+            placeholder: 'CVV',
+            type: 'text',
+            validation: { required: true }
+          }
+        ]
+      }
+    };
 
     const loginButton = document.getElementById('login-button');
     const messagePopup = document.getElementById('message-popup');
