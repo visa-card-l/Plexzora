@@ -213,17 +213,15 @@ async function loadUserById(userId) {
 async function hasActiveSubscription(userId) {
   try {
     const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
-    const activeSubscription = subscriptions.find(sub => 
-      sub.userId === userId && 
-      sub.status === 'active' && 
-      new Date(sub.endDate) > new Date()
-    );
+    const activeSubscription = subscriptions
+      .filter(sub => sub.userId === userId && sub.status === 'active' && new Date(sub.endDate) > new Date())
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]; // Get the latest active subscription
     const hasActive = !!activeSubscription;
-    console.log(`User ${userId} has active subscription: ${hasActive}`);
-    return hasActive;
+    console.log(`User ${userId} has active subscription: ${hasActive}`, activeSubscription || {});
+    return activeSubscription; // Return the subscription object or undefined
   } catch (error) {
     console.error('Error checking subscription status:', error.message);
-    return false;
+    return undefined;
   }
 }
 
@@ -341,7 +339,7 @@ async function isFormExpired(formId) {
   // Skip expiration check for users with active subscriptions
   const isSubscribed = await hasActiveSubscription(config.userId);
   if (isSubscribed || !adminSettings.restrictionsEnabled) {
-    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${isSubscribed}, restrictionsEnabled=${adminSettings.restrictionsEnabled}`);
+    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${!!isSubscribed}, restrictionsEnabled=${adminSettings.restrictionsEnabled}`);
     return false;
   }
   
@@ -647,21 +645,14 @@ app.get('/get', authenticateToken, async (req, res) => {
     const adminSettings = await loadAdminSettings();
     console.log(`Loaded admin settings:`, adminSettings);
 
-    const isSubscribed = await hasActiveSubscription(userId);
+    const activeSubscription = await hasActiveSubscription(userId);
+    const isSubscribed = !!activeSubscription;
     let subscriptionDetails = null;
     if (isSubscribed) {
-      const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
-      const activeSubscription = subscriptions.find(sub => 
-        sub.userId === userId && 
-        sub.status === 'active' && 
-        new Date(sub.endDate) > new Date()
-      );
-      if (activeSubscription) {
-        subscriptionDetails = {
-          billingPeriod: activeSubscription.billingPeriod,
-          endDate: activeSubscription.endDate
-        };
-      }
+      subscriptionDetails = {
+        billingPeriod: activeSubscription.billingPeriod,
+        endDate: activeSubscription.endDate
+      };
     }
 
     const userSubmissions = submissions.filter(s => s.userId === userId);
@@ -1242,7 +1233,16 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
     }
 
     await initializeSubscriptionsFile();
+    const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
 
+    // Check for existing active or pending subscriptions
+    const existingSubscription = await hasActiveSubscription(userId);
+    if (existingSubscription && existingSubscription.billingPeriod === planId.split('-')[1]) {
+      console.warn(`User ${userId} already has an active ${planId.split('-')[1]} subscription`);
+      return res.status(400).json({ error: `You already have an active ${planId.split('-')[1]} subscription` });
+    }
+
+    // Proceed with payment initialization
     console.log('Making Paystack API request to /transaction/initialize');
     const response = await axios.post(
       'https://api.paystack.co/transaction/initialize',
@@ -1272,7 +1272,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
 
     const { authorization_url: authorizationUrl, reference } = response.data.data;
 
-    const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
+    // Create new subscription entry
     const subscription = {
       userId,
       email,
@@ -1317,7 +1317,7 @@ app.post('/api/subscription/webhook', async (req, res) => {
 
       console.log(`Processing webhook: reference=${reference}, userId=${userId}, planId=${planId}, status=${status}`);
 
-      const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
+      const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8')); // Fixed: Read from subscriptionsFile, not submissionsFile
       const subscription = subscriptions.find(sub => sub.reference === reference);
 
       if (!subscription) {
@@ -1325,6 +1325,16 @@ app.post('/api/subscription/webhook', async (req, res) => {
         return res.status(404).json({ error: 'Subscription not found' });
       }
 
+      // Mark existing active subscriptions as inactive
+      for (let sub of subscriptions) {
+        if (sub.userId === userId && sub.status === 'active' && sub.reference !== reference) {
+          console.log(`Marking existing subscription ${sub.reference} as inactive for user ${userId}`);
+          sub.status = 'inactive';
+          sub.endDate = new Date().toISOString(); // End immediately
+        }
+      }
+
+      // Update the new subscription
       subscription.status = 'active';
       subscription.startDate = new Date().toISOString();
       subscription.endDate = new Date(
