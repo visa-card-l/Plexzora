@@ -203,10 +203,31 @@ async function loadFormCreations() {
   }
 }
 
+// Load subscriptions from file
+async function loadSubscriptions() {
+  try {
+    const data = await fs.readFile(submissionsFile, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error('Error loading subscriptions:', err.message);
+    return [];
+  }
+}
+
 // Load user by ID
 async function loadUserById(userId) {
   const users = await loadUsers();
   return users.find(u => u.id === userId);
+}
+
+// Get count of active subscribers
+async function getSubscriberCount() {
+  const subscriptions = await loadSubscriptions();
+  const activeSubscribers = subscriptions.filter(sub => 
+    sub.status === 'active' && new Date(sub.endDate) > new Date()
+  ).length;
+  console.log(`Counted ${activeSubscribers} active subscribers`);
+  return activeSubscribers;
 }
 
 // Utility to check if user has an active subscription
@@ -527,6 +548,7 @@ app.get('/admin', async (req, res) => {
   try {
     const adminSettings = await loadAdminSettings();
     const userCount = await getUserCount();
+    const subscriberCount = await getSubscriberCount();
     res.render('admin', {
       headerHtml: 'Admin Settings',
       subheaderText: 'Configure form settings',
@@ -537,6 +559,7 @@ app.get('/admin', async (req, res) => {
       buttonText: 'Update Settings',
       theme: 'light',
       userCount,
+      subscriberCount,
       restrictionsEnabled: adminSettings.restrictionsEnabled,
       linkLifespanValue: adminSettings.linkLifespanValue,
       linkLifespanUnit: adminSettings.linkLifespanUnit,
@@ -791,7 +814,7 @@ app.post('/create', authenticateToken, async (req, res) => {
     console.log('Generated URL:', url);
     res.status(200).json({ url, formId, expiresAt: config.expiresAt });
   } catch (error) {
-    console.error('Error in /create:', error.message, error.stack);
+    console.error('Error in /create:', error.message, err.stack);
     res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
   }
 });
