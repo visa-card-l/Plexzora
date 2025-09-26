@@ -1,9 +1,11 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const ejs = require('ejs');
+const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
+const MongoStore = require('rate-limit-mongo');
+const sanitize = require('mongo-sanitize');
+const helmet = require('helmet');
 const cors = require('cors');
-const fs = require('fs').promises;
-const path = require('path');
+const ejs = require('ejs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
@@ -14,283 +16,323 @@ const port = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/form_app';
 
-// Use persistent path for Render
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const submissionsFile = path.join(DATA_DIR, 'submissions.json');
-const formConfigsFile = path.join(DATA_DIR, 'formConfigs.json');
-const usersFile = path.join(DATA_DIR, 'users.json');
-const adminSettingsFile = path.join(DATA_DIR, 'adminSettings.json');
-const formCreationsFile = path.join(DATA_DIR, 'formCreations.json');
-const subscriptionsFile = path.join(DATA_DIR, 'subscriptions.json');
+// MongoDB Connection
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => console.log('Connected to MongoDB'))
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+  });
 
-// Ensure data directory exists
-async function ensureDataDir() {
-  try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    console.log(`Data directory ensured: ${DATA_DIR}`);
-  } catch (err) {
-    console.error('Error creating data directory:', err.message, err.stack);
-    throw err;
-  }
-}
+// MongoDB Schemas
+const UserSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  username: { type: String, default: '' },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date }
+});
 
-// Initialize submissions file
-async function initializeSubmissionsFile() {
-  try {
-    await fs.access(submissionsFile);
-    console.log(`Submissions file exists: ${submissionsFile}`);
-  } catch {
-    await fs.writeFile(submissionsFile, JSON.stringify([]));
-    console.log('Created submissions.json');
-  }
-}
+const FormConfigSchema = new mongoose.Schema({
+  formId: { type: String, required: true, unique: true },
+  userId: { type: String, required: true },
+  template: { type: String, required: true },
+  headerText: { type: String, default: 'My Form' },
+  headerColors: [{ type: String }],
+  subheaderText: { type: String, default: 'Fill the form' },
+  subheaderColor: { type: String },
+  placeholders: [{
+    id: String,
+    placeholder: String
+  }],
+  borderShadow: { type: String },
+  buttonColor: { type: String },
+  buttonTextColor: { type: String },
+  buttonText: { type: String },
+  buttonAction: { type: String, enum: ['url', 'message'] },
+  buttonUrl: { type: String },
+  buttonMessage: { type: String },
+  theme: { type: String, enum: ['light', 'dark'], default: 'light' },
+  createdAt: { type: Date, default: Date.now },
+  expiresAt: { type: Date }
+});
 
-// Initialize form configs file
-async function initializeFormConfigsFile() {
-  try {
-    await fs.access(formConfigsFile);
-    const data = await fs.readFile(formConfigsFile, 'utf8');
-    formConfigs = JSON.parse(data);
-    console.log('Loaded formConfigs from file');
-  } catch {
-    await fs.writeFile(formConfigsFile, JSON.stringify({}));
-    console.log('Created formConfigs.json');
-  }
-}
+const SubmissionSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  formId: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now },
+  data: { type: Object, required: true }
+});
 
-// Initialize form creations file
-async function initializeFormCreationsFile() {
-  try {
-    await fs.access(formCreationsFile);
-    console.log(`Form creations file exists: ${formCreationsFile}`);
-  } catch {
-    await fs.writeFile(formCreationsFile, JSON.stringify([]));
-    console.log('Created formCreations.json');
-  }
-}
+const AdminSettingsSchema = new mongoose.Schema({
+  linkLifespan: { type: Number },
+  linkLifespanValue: { type: Number },
+  linkLifespanUnit: { type: String, enum: ['seconds', 'minutes', 'hours', 'days'] },
+  maxFormsPerUserPerDay: { type: Number },
+  restrictionsEnabled: { type: Boolean, default: true }
+});
 
-// Initialize admin settings file
-async function initializeAdminSettingsFile() {
-  try {
-    await fs.access(adminSettingsFile);
-    console.log(`Admin settings file exists: ${adminSettingsFile}`);
-  } catch {
-    await fs.writeFile(adminSettingsFile, JSON.stringify({
-      linkLifespan: 604800000, // Default: 7 days in milliseconds
+const FormCreationSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  formId: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const SubscriptionSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  email: { type: String, required: true },
+  planId: { type: String, required: true },
+  billingPeriod: { type: String, enum: ['weekly', 'monthly'], required: true },
+  reference: { type: String, required: true, unique: true },
+  status: { type: String, enum: ['pending', 'active', 'inactive'], required: true },
+  createdAt: { type: Date, default: Date.now },
+  startDate: { type: Date },
+  endDate: { type: Date }
+});
+
+const User = mongoose.model('User', UserSchema);
+const FormConfig = mongoose.model('FormConfig', FormConfigSchema);
+const Submission = mongoose.model('Submission', SubmissionSchema);
+const AdminSettings = mongoose.model('AdminSettings', AdminSettingsSchema);
+const FormCreation = mongoose.model('FormCreation', FormCreationSchema);
+const Subscription = mongoose.model('Subscription', SubscriptionSchema);
+
+// Initialize default admin settings
+async function initializeAdminSettings() {
+  const existingSettings = await AdminSettings.findOne();
+  if (!existingSettings) {
+    await AdminSettings.create({
+      linkLifespan: 604800000, // 7 days in milliseconds
       linkLifespanValue: 7,
       linkLifespanUnit: 'days',
       maxFormsPerUserPerDay: 10,
       restrictionsEnabled: true
-    }));
-    console.log('Created adminSettings.json');
+    });
+    console.log('Created default admin settings');
   }
 }
 
-// Initialize users file
-async function initializeUsersFile() {
-  try {
-    await fs.access(usersFile);
-    console.log(`Users file exists: ${usersFile}`);
-  } catch {
-    await fs.writeFile(usersFile, JSON.stringify([]));
-    console.log('Created users.json');
-  }
-}
-
-// Initialize subscriptions file
-async function initializeSubscriptionsFile() {
-  try {
-    await fs.access(subscriptionsFile);
-    console.log(`Subscriptions file exists: ${subscriptionsFile}`);
-  } catch {
-    await fs.writeFile(subscriptionsFile, JSON.stringify([]));
-    console.log('Created subscriptions.json');
-  }
-}
-
-// Save formConfigs to file
-async function saveFormConfigs() {
-  try {
-    await fs.writeFile(formConfigsFile, JSON.stringify(formConfigs, null, 2));
-    console.log('Saved formConfigs to file');
-  } catch (err) {
-    console.error('Error saving formConfigs:', err.message, err.stack);
-    throw err;
-  }
-}
-
-// Save form creations to file
-async function saveFormCreations(formCreations) {
-  try {
-    await fs.writeFile(formCreationsFile, JSON.stringify(formCreations, null, 2));
-    console.log('Saved formCreations to file');
-  } catch (err) {
-    console.error('Error saving formCreations:', err.message, err.stack);
-    throw err;
-  }
-}
-
-// Save users to file
-async function saveUsers(users) {
-  try {
-    await fs.writeFile(usersFile, JSON.stringify(users, null, 2));
-    console.log('Saved users to file');
-  } catch (err) {
-    console.error('Error saving users:', err.message, err.stack);
-    throw err;
-  }
-}
-
-// Save admin settings to file
-async function saveAdminSettings(settings) {
-  try {
-    await fs.writeFile(adminSettingsFile, JSON.stringify(settings, null, 2));
-    console.log('Saved admin settings to file');
-  } catch (err) {
-    console.error('Error saving admin settings:', err.message, err.stack);
-    throw err;
-  }
-}
-
-// Save subscriptions to file
-async function saveSubscriptions(subscriptions) {
-  try {
-    await fs.writeFile(subscriptionsFile, JSON.stringify(subscriptions, null, 2));
-    console.log('Saved subscriptions to file');
-  } catch (err) {
-    console.error('Error saving subscriptions:', err.message, err.stack);
-    throw err;
-  }
-}
-
-// Load users from file
-async function loadUsers() {
-  try {
-    const data = await fs.readFile(usersFile, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error('Error loading users:', err.message);
-    return [];
-  }
-}
-
-// Load admin settings from file
-async function loadAdminSettings() {
-  try {
-    const data = await fs.readFile(adminSettingsFile, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error('Error loading admin settings:', err.message);
-    return {
-      linkLifespan: 604800000,
-      linkLifespanValue: 7,
-      linkLifespanUnit: 'days',
-      maxFormsPerUserPerDay: 10,
-      restrictionsEnabled: true
-    };
-  }
-}
-
-// Load form creations from file
-async function loadFormCreations() {
-  try {
-    const data = await fs.readFile(formCreationsFile, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error('Error loading form creations:', err.message);
-    return [];
-  }
-}
-
-// Load subscriptions from file
-async function loadSubscriptions() {
-  try {
-    const data = await fs.readFile(subscriptionsFile, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error('Error loading subscriptions:', err.message);
-    return [];
-  }
-}
-
-// Load user by ID
-async function loadUserById(userId) {
-  const users = await loadUsers();
-  return users.find(u => u.id === userId);
-}
-
-// Get count of active subscribers
-async function getSubscriberCount() {
-  const subscriptions = await loadSubscriptions();
-  const activeSubscribers = subscriptions.filter(sub => 
-    sub.status === 'active' && new Date(sub.endDate) > new Date()
-  ).length;
-  console.log(`Counted ${activeSubscribers} active subscribers`);
-  return activeSubscribers;
-}
-
-// Utility to check if user has an active subscription
-async function hasActiveSubscription(userId) {
-  try {
-    const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
-    const activeSubscription = subscriptions
-      .filter(sub => sub.userId === userId && sub.status === 'active' && new Date(sub.endDate) > new Date())
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]; // Get the latest active subscription
-    const hasActive = !!activeSubscription;
-    console.log(`User ${userId} has active subscription: ${hasActive}`, activeSubscription || {});
-    return activeSubscription; // Return the subscription object or undefined
-  } catch (error) {
-    console.error('Error checking subscription status:', error.message);
-    return undefined;
-  }
-}
-
-// JWT verification middleware
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.error('No token provided in Authorization header');
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    console.log('Token decoded:', decoded);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    console.error('Token verification error:', error.message);
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
-}
-
-// Admin password verification middleware
-function verifyAdminPassword(req, res, next) {
-  const { adminPassword } = req.body;
-  if (!adminPassword || !bcrypt.compareSync(adminPassword, ADMIN_PASSWORD_HASH)) {
-    return res.status(401).json({ error: 'Invalid admin password' });
-  }
-  next();
-}
-
-// Initialize storage
-let formConfigs = {};
+// Run initialization
 (async () => {
   try {
-    await ensureDataDir();
-    await initializeSubmissionsFile();
-    await initializeFormConfigsFile();
-    await initializeFormCreationsFile();
-    await initializeUsersFile();
-    await initializeAdminSettingsFile();
-    await initializeSubscriptionsFile();
+    await initializeAdminSettings();
   } catch (err) {
     console.error('Initialization failed:', err.message, err.stack);
     process.exit(1);
   }
 })();
+
+// Rate Limit Store Configuration
+const mongoStore = (collectionName, expireTimeMs = 60 * 1000) => new MongoStore({
+  uri: MONGODB_URI,
+  collectionName,
+  expireTimeMs
+});
+
+// Rate Limiters
+const rateLimiters = {
+  signup: rateLimit({
+    store: mongoStore('signup_limits'),
+    windowMs: 60 * 1000,
+    max: 10,
+    keyGenerator: (req) => req.ip
+  }),
+
+  login: [
+    rateLimit({
+      store: mongoStore('login_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 10,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('login_email_limits'),
+      windowMs: 60 * 1000,
+      max: 3,
+      keyGenerator: (req) => sanitize(req.body.email)
+    })
+  ],
+
+  forgotPassword: [
+    rateLimit({
+      store: mongoStore('forgot_password_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('forgot_password_email_limits'),
+      windowMs: 5 * 60 * 1000,
+      max: 1,
+      keyGenerator: (req) => sanitize(req.body.email)
+    })
+  ],
+
+  resetPassword: [
+    rateLimit({
+      store: mongoStore('reset_password_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('reset_password_email_limits'),
+      windowMs: 10 * 60 * 1000,
+      max: 1,
+      keyGenerator: (req) => sanitize(req.body.email)
+    })
+  ],
+
+  adminSettings: rateLimit({
+    store: mongoStore('admin_settings_limits'),
+    windowMs: 60 * 1000,
+    max: 5,
+    keyGenerator: (req) => req.ip
+  }),
+
+  create: [
+    rateLimit({
+      store: mongoStore('create_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 10,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('create_user_limits'),
+      windowMs: 60 * 1000,
+      max: async (req) => {
+        const user = await User.findById(req.user?.userId);
+        const subscription = await Subscription.findOne({ userId: req.user?.userId, status: 'active' });
+        return subscription ? 10 : 2;
+      },
+      keyGenerator: (req) => req.user?.userId
+    })
+  ],
+
+  formSubmit: [
+    rateLimit({
+      store: mongoStore('form_submit_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 20,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('form_submit_form_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.params.id
+    })
+  ],
+
+  initiatePayment: [
+    rateLimit({
+      store: mongoStore('payment_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('payment_email_limits'),
+      windowMs: 5 * 60 * 1000,
+      max: 2,
+      keyGenerator: (req) => sanitize(req.body.email)
+    })
+  ],
+
+  webhook: rateLimit({
+    store: mongoStore('webhook_limits'),
+    windowMs: 60 * 1000,
+    max: 20,
+    keyGenerator: (req) => req.ip
+  }),
+
+  getForm: rateLimit({
+    store: mongoStore('get_form_limits'),
+    windowMs: 60 * 1000,
+    max: 50,
+    keyGenerator: (req) => req.ip
+  }),
+
+  getUser: [
+    rateLimit({
+      store: mongoStore('get_user_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 20,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('get_user_limits'),
+      windowMs: 60 * 1000,
+      max: 20,
+      keyGenerator: (req) => req.user?.userId
+    })
+  ],
+
+  getSubmissions: [
+    rateLimit({
+      store: mongoStore('get_submissions_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 20,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('get_submissions_limits'),
+      windowMs: 60 * 1000,
+      max: 20,
+      keyGenerator: (req) => req.user?.userId
+    })
+  ],
+
+  updateForm: [
+    rateLimit({
+      store: mongoStore('update_form_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('update_form_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.user?.userId
+    })
+  ],
+
+  deleteForm: [
+    rateLimit({
+      store: mongoStore('delete_form_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('delete_form_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.user?.userId
+    })
+  ],
+
+  deleteSubmission: [
+    rateLimit({
+      store: mongoStore('delete_submission_ip_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.ip
+    }),
+    rateLimit({
+      store: mongoStore('delete_submission_limits'),
+      windowMs: 60 * 1000,
+      max: 5,
+      keyGenerator: (req) => req.user?.userId
+    })
+  ]
+};
 
 // Middleware
 app.use(cors({
@@ -299,7 +341,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
   credentials: false
 }));
-app.use(bodyParser.json());
+app.use(express.json());
+app.use(helmet());
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -312,7 +355,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Utility to normalize URLs
+// Utility Functions
 function normalizeUrl(url) {
   if (!url) return null;
   url = url.trim();
@@ -321,20 +364,23 @@ function normalizeUrl(url) {
   return null;
 }
 
-// Utility to generate a short, unique code
 function generateShortCode(length = 6) {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let code = '';
   for (let i = 0; i < length; i++) {
     code += characters.charAt(Math.floor(Math.random() * characters.length));
   }
-  if (formConfigs[code]) {
-    return generateShortCode(length);
+  return code;
+}
+
+async function checkUniqueFormId(code) {
+  const existing = await FormConfig.findOne({ formId: code });
+  if (existing) {
+    return generateShortCode();
   }
   return code;
 }
 
-// Utility to sanitize strings
 function sanitizeForJs(str) {
   if (!str) return '';
   return str
@@ -347,83 +393,113 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-// Utility to check if form is expired
 async function isFormExpired(formId) {
-  const config = formConfigs[formId];
+  const config = await FormConfig.findOne({ formId });
   if (!config || !config.createdAt) {
     console.log(`Form ${formId} not found or missing createdAt`);
     return true;
   }
-  
-  const adminSettings = await loadAdminSettings();
-  
-  // Skip expiration check for users with active subscriptions
-  const isSubscribed = await hasActiveSubscription(config.userId);
-  if (isSubscribed || !adminSettings.restrictionsEnabled) {
-    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${!!isSubscribed}, restrictionsEnabled=${adminSettings.restrictionsEnabled}`);
+
+  const adminSettings = await AdminSettings.findOne();
+  const subscription = await Subscription.findOne({ userId: config.userId, status: 'active' });
+
+  if (subscription || !adminSettings.restrictionsEnabled) {
+    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${!!subscription}, restrictionsEnabled=${adminSettings.restrictionsEnabled}`);
     return false;
   }
-  
+
   if (!adminSettings.linkLifespan) {
     console.log(`No linkLifespan set for form ${formId}, assuming not expired`);
     return false;
   }
-  
+
   const createdTime = new Date(config.createdAt).getTime();
   const currentTime = Date.now();
   const isExpired = (currentTime - createdTime) > adminSettings.linkLifespan;
-  
+
   if (isExpired) {
     console.log(`Form ${formId} is expired, deleting form and submissions`);
-    delete formConfigs[formId];
-    await saveFormConfigs();
-    
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const updatedSubmissions = submissions.filter(s => s.formId !== formId);
-    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    console.log(`Deleted form ${formId} and its submissions`);
+    await FormConfig.deleteOne({ formId });
+    await Submission.deleteMany({ formId });
   }
-  
-  console.log(`Form ${formId} expiration check: createdAt=${config.createdAt}, currentTime=${currentTime}, linkLifespan=${adminSettings.linkLifespan}, isExpired=${isExpired}`);
+
   return isExpired;
 }
 
-// Utility to count user's forms created today
 async function countUserFormsToday(userId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStart = today.getTime();
   const todayEnd = todayStart + 24 * 60 * 60 * 1000;
 
-  const formCreations = await loadFormCreations();
-  const count = formCreations.filter(creation => {
-    if (creation.userId !== userId) return false;
-    const createdTime = new Date(creation.createdAt).getTime();
-    return createdTime >= todayStart && createdTime < todayEnd;
-  }).length;
+  const count = await FormCreation.countDocuments({
+    userId,
+    createdAt: { $gte: new Date(todayStart), $lt: new Date(todayEnd) }
+  });
 
   console.log(`Counted ${count} forms created today for user ${userId}`);
   return count;
 }
 
-// Utility to get total user count
 async function getUserCount() {
-  const users = await loadUsers();
-  return users.length;
+  return await User.countDocuments();
 }
 
-// Auth Route: Get current user info
-app.get('/user', authenticateToken, async (req, res) => {
+async function getSubscriberCount() {
+  const count = await Subscription.countDocuments({
+    status: 'active',
+    endDate: { $gt: new Date() }
+  });
+  console.log(`Counted ${count} active subscribers`);
+  return count;
+}
+
+async function hasActiveSubscription(userId) {
+  const subscription = await Subscription.findOne({
+    userId,
+    status: 'active',
+    endDate: { $gt: new Date() }
+  }).sort({ createdAt: -1 });
+  console.log(`User ${userId} has active subscription: ${!!subscription}`);
+  return subscription;
+}
+
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('No token provided in Authorization header');
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  const token = authHeader.split(' ')[1];
   try {
-    const user = await loadUserById(req.user.userId);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.error('Token verification error:', error.message);
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+function verifyAdminPassword(req, res, next) {
+  const { adminPassword } = req.body;
+  if (!adminPassword || !bcrypt.compareSync(adminPassword, ADMIN_PASSWORD_HASH)) {
+    return res.status(401).json({ error: 'Invalid admin password' });
+  }
+  next();
+}
+
+// Routes
+app.get('/user', rateLimiters.getUser, authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findOne({ id: req.user.userId });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    const { id, username, email, createdAt } = user;
-    res.json({ 
-      user: { id, username, email, createdAt },
-      message: 'User info retrieved successfully' 
+    res.json({
+      user: { id: user.id, username: user.username, email: user.email, createdAt: user.createdAt },
+      message: 'User info retrieved successfully'
     });
   } catch (error) {
     console.error('Error fetching user info:', error);
@@ -431,33 +507,25 @@ app.get('/user', authenticateToken, async (req, res) => {
   }
 });
 
-// Auth Route: Signup
-app.post('/signup', async (req, res) => {
+app.post('/signup', rateLimiters.signup, async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const users = await loadUsers();
-    const existingUser = users.find(u => u.email === email);
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ error: 'User already exists with this email' });
     }
 
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    const newUser = {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await User.create({
       id: Date.now().toString(),
       username: username || '',
       email,
-      password: hashedPassword,
-      createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-    await saveUsers(users);
+      password: hashedPassword
+    });
 
     const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '1h' });
     res.status(201).json({ message: 'User created successfully', token });
@@ -467,16 +535,14 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-// Auth Route: Login
-app.post('/login', async (req, res) => {
+app.post('/login', rateLimiters.login, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const users = await loadUsers();
-    const user = users.find(u => u.email === email);
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -494,16 +560,14 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Auth Route: Forgot Password
-app.post('/forgot-password', async (req, res) => {
+app.post('/forgot-password', rateLimiters.forgotPassword, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const users = await loadUsers();
-    const user = users.find(u => u.email === email);
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ error: 'Email not found' });
     }
@@ -515,26 +579,23 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
-// Auth Route: Reset Password
-app.post('/reset-password', async (req, res) => {
+app.post('/reset-password', rateLimiters.resetPassword, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and new password are required' });
     }
 
-    const users = await loadUsers();
-    const userIndex = users.findIndex(u => u.email === email);
-    if (userIndex === -1) {
+    const user = await User.findOne({ email });
+    if (!user) {
       return res.status(404).json({ error: 'Email not found' });
     }
 
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-    users[userIndex].password = hashedPassword;
-    users[userIndex].updatedAt = new Date().toISOString();
-
-    await saveUsers(users);
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await User.updateOne({ email }, {
+      password: hashedPassword,
+      updatedAt: new Date()
+    });
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
@@ -543,10 +604,9 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-// Admin Route: Render admin settings page
 app.get('/admin', async (req, res) => {
   try {
-    const adminSettings = await loadAdminSettings();
+    const adminSettings = await AdminSettings.findOne();
     const userCount = await getUserCount();
     const subscriberCount = await getSubscriberCount();
     res.render('admin', {
@@ -566,13 +626,12 @@ app.get('/admin', async (req, res) => {
       maxFormsPerUserPerDay: adminSettings.maxFormsPerUserPerDay
     });
   } catch (error) {
-    console.error('Error rendering admin page:', error.message, error.stack);
+    console.error('Error rendering admin page:', error);
     res.status(500).send('Error rendering admin page');
   }
 });
 
-// Admin Route: Set global settings
-app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
+app.post('/admin/settings', rateLimiters.adminSettings, verifyAdminPassword, async (req, res) => {
   try {
     const { linkLifespanValue, linkLifespanUnit, maxFormsPerUserPerDay, restrictionsEnabled } = req.body;
 
@@ -610,8 +669,6 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
         case 'days':
           lifespanMs = value * 24 * 60 * 60 * 1000;
           break;
-        default:
-          return res.status(400).json({ error: 'Invalid link lifespan unit' });
       }
     }
 
@@ -623,79 +680,60 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
       restrictionsEnabled: !!restrictionsEnabled
     };
 
-    await saveAdminSettings(adminSettings);
+    await AdminSettings.updateOne({}, adminSettings, { upsert: true });
     console.log('Admin settings updated:', adminSettings);
 
     if (adminSettings.restrictionsEnabled) {
-      const expiredFormIds = [];
-      for (const formId of Object.keys(formConfigs)) {
-        if (await isFormExpired(formId)) {
-          expiredFormIds.push(formId);
-        }
-      }
-
+      const expiredForms = await FormConfig.find({
+        expiresAt: { $lte: new Date() }
+      });
+      const expiredFormIds = expiredForms.map(f => f.formId);
       if (expiredFormIds.length > 0) {
-        console.log(`Deleted ${expiredFormIds.length} expired forms during admin settings update`);
+        await FormConfig.deleteMany({ formId: { $in: expiredFormIds } });
+        await Submission.deleteMany({ formId: { $in: expiredFormIds } });
+        console.log(`Deleted ${expiredFormIds.length} expired forms`);
       }
     }
 
-    res.status(200).json({ 
+    res.status(200).json({
       message: 'Admin settings updated successfully',
-      settings: adminSettings 
+      settings: adminSettings
     });
   } catch (error) {
-    console.error('Error updating admin settings:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to update admin settings', details: error.message });
+    console.error('Error updating admin settings:', error);
+    res.status(500).json({ error: 'Failed to update admin settings' });
   }
 });
 
-// Protected Routes - WITH USER ISOLATION
 app.get('/get', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    console.log(`Processing /get request for user ${userId}`);
-
-    let submissions = [];
-    try {
-      const data = await fs.readFile(submissionsFile, 'utf8');
-      submissions = JSON.parse(data);
-      console.log(`Loaded ${submissions.length} total submissions from ${submissionsFile}`);
-    } catch (error) {
-      console.error('Error reading submissions file:', error.message);
-      submissions = [];
-    }
-
-    const adminSettings = await loadAdminSettings();
-    console.log(`Loaded admin settings:`, adminSettings);
-
-    const activeSubscription = await hasActiveSubscription(userId);
-    const isSubscribed = !!activeSubscription;
+    const adminSettings = await AdminSettings.findOne();
+    const subscription = await hasActiveSubscription(userId);
+    const isSubscribed = !!subscription;
     let subscriptionDetails = null;
     if (isSubscribed) {
       subscriptionDetails = {
-        billingPeriod: activeSubscription.billingPeriod,
-        endDate: activeSubscription.endDate
+        billingPeriod: subscription.billingPeriod,
+        endDate: subscription.endDate
       };
     }
 
-    const userSubmissions = submissions.filter(s => s.userId === userId);
-    console.log(`Filtered ${userSubmissions.length} submissions for user ${userId}`);
-
+    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
+    const formConfigs = await FormConfig.find({ userId });
     const userFormConfigs = {};
     const validForms = [];
-    for (const [formId, config] of Object.entries(formConfigs)) {
-      if (config.userId === userId) {
-        const isExpired = await isFormExpired(formId);
-        if (!isExpired) {
-          const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed)
-            ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
-            : null;
-          userFormConfigs[formId] = { ...config, expiresAt: computedExpiresAt };
-          validForms.push(formId);
-        }
+
+    for (const config of formConfigs) {
+      const isExpired = await isFormExpired(config.formId);
+      if (!isExpired) {
+        const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed)
+          ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
+          : null;
+        userFormConfigs[config.formId] = { ...config.toObject(), expiresAt: computedExpiresAt };
+        validForms.push(config.formId);
       }
     }
-    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')})`);
 
     const templates = {
       'sign-in': {
@@ -721,40 +759,27 @@ app.get('/get', authenticateToken, async (req, res) => {
         ]
       }
     };
-    
-    const responseData = {
-      submissions: userSubmissions.reverse(),
+
+    res.json({
+      submissions,
       formConfigs: userFormConfigs,
       templates,
       userId,
       isSubscribed,
       subscriptionDetails
-    };
-    console.log(`Returning data for user ${userId}:`, {
-      submissionCount: responseData.submissions.length,
-      formConfigCount: Object.keys(responseData.formConfigs).length,
-      templateKeys: Object.keys(responseData.templates),
-      userId: responseData.userId,
-      isSubscribed: responseData.isSubscribed,
-      subscriptionDetails: responseData.subscriptionDetails
     });
-
-    res.json(responseData);
   } catch (error) {
-    console.error('Error fetching data for /get:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
+    console.error('Error fetching data for /get:', error);
+    res.status(500).json({ error: 'Failed to fetch data' });
   }
 });
 
-// Create new form
-app.post('/create', authenticateToken, async (req, res) => {
+app.post('/create', rateLimiters.create, authenticateToken, async (req, res) => {
   try {
-    console.log('Received /create request:', req.body);
     const userId = req.user.userId;
-    const adminSettings = await loadAdminSettings();
-    
+    const adminSettings = await AdminSettings.findOne();
     const isSubscribed = await hasActiveSubscription(userId);
-    
+
     if (!isSubscribed && adminSettings.restrictionsEnabled) {
       const userFormCountToday = await countUserFormsToday(userId);
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
@@ -763,9 +788,11 @@ app.post('/create', authenticateToken, async (req, res) => {
     }
 
     const templateId = req.body.template || 'sign-in';
-    const formId = generateShortCode();
+    let formId = await checkUniqueFormId(generateShortCode());
     const validActions = ['url', 'message'];
+
     const config = {
+      formId,
       userId,
       template: templateId,
       headerText: req.body.headerText || 'My Form',
@@ -784,127 +811,106 @@ app.post('/create', authenticateToken, async (req, res) => {
       buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
-      createdAt: new Date().toISOString(),
-      expiresAt: !isSubscribed && adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null
+      expiresAt: !isSubscribed && adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan) : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
-      console.error('Invalid URL provided:', config.buttonUrl);
       return res.status(400).json({ error: 'Invalid URL provided' });
     }
     if (config.buttonAction === 'message' && !config.buttonMessage) {
       config.buttonMessage = 'Form submitted successfully!';
     }
 
-    const formCreations = await loadFormCreations();
-    formCreations.push({
-      userId,
-      formId,
-      createdAt: config.createdAt
-    });
-    await saveFormCreations(formCreations);
-
-    formConfigs[formId] = config;
-    console.log(`Stored form config for ${formId} for user ${userId}:`, config);
-    await saveFormConfigs();
+    await FormConfig.create(config);
+    await FormCreation.create({ userId, formId, createdAt: new Date() });
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
-    console.log('Generated URL:', url);
     res.status(200).json({ url, formId, expiresAt: config.expiresAt });
   } catch (error) {
-    console.error('Error in /create:', error.message, err.stack);
-    res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
+    console.error('Error in /create:', error);
+    res.status(500).json({ error: 'Failed to generate shareable link' });
   }
 });
 
-// Update existing form
-app.put('/api/form/:id', authenticateToken, async (req, res) => {
+app.put('/api/form/:id', rateLimiters.updateForm, authenticateToken, async (req, res) => {
   try {
-    console.log('Received /api/form/:id PUT request:', req.body);
     const formId = req.params.id;
     const userId = req.user.userId;
     const updatedConfig = req.body;
 
-    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
-      console.error(`User ${userId} does not have access to form ${formId}`);
+    const existingConfig = await FormConfig.findOne({ formId, userId });
+    if (!existingConfig) {
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
-    const adminSettings = await loadAdminSettings();
+    const adminSettings = await AdminSettings.findOne();
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
     const isSubscribed = await hasActiveSubscription(userId);
-
     const validActions = ['url', 'message'];
+
     const config = {
-      userId,
-      template: updatedConfig.template || formConfigs[formId].template,
-      headerText: updatedConfig.headerText || formConfigs[formId].headerText || 'My Form',
-      headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : formConfigs[formId].headerColors,
-      subheaderText: updatedConfig.subheaderText || formConfigs[formId].subheaderText || 'Fill the form',
-      subheaderColor: updatedConfig.subheaderColor || formConfigs[formId].subheaderColor || (updatedConfig.theme === 'dark' ? '#d1d5db' : '#555555'),
+      template: updatedConfig.template || existingConfig.template,
+      headerText: updatedConfig.headerText || existingConfig.headerText,
+      headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : existingConfig.headerColors,
+      subheaderText: updatedConfig.subheaderText || existingConfig.subheaderText,
+      subheaderColor: updatedConfig.subheaderColor || existingConfig.subheaderColor,
       placeholders: Array.isArray(updatedConfig.placeholders) ? updatedConfig.placeholders.map(p => ({
         id: sanitizeForJs(p.id),
         placeholder: sanitizeForJs(p.placeholder)
-      })) : formConfigs[formId].placeholders,
-      borderShadow: updatedConfig.borderShadow || formConfigs[formId].borderShadow || (updatedConfig.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000'),
-      buttonColor: updatedConfig.buttonColor || formConfigs[formId].buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)',
-      buttonTextColor: updatedConfig.buttonTextColor || formConfigs[formId].buttonTextColor || (updatedConfig.buttonColor === '#ffffff' ? '#000000' : '#ffffff'),
-      buttonText: updatedConfig.buttonText || formConfigs[formId].buttonText || 'Sign In',
-      buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : formConfigs[formId].buttonAction || 'url',
-      buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : formConfigs[formId].buttonUrl || '',
-      buttonMessage: updatedConfig.buttonMessage || formConfigs[formId].buttonMessage || '',
-      theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : formConfigs[formId].theme || 'light',
-      createdAt: formConfigs[formId].createdAt,
-      updatedAt: new Date().toISOString(),
+      })) : existingConfig.placeholders,
+      borderShadow: updatedConfig.borderShadow || existingConfig.borderShadow,
+      buttonColor: updatedConfig.buttonColor || existingConfig.buttonColor,
+      buttonTextColor: updatedConfig.buttonTextColor || existingConfig.buttonTextColor,
+      buttonText: updatedConfig.buttonText || existingConfig.buttonText,
+      buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : existingConfig.buttonAction,
+      buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : existingConfig.buttonUrl,
+      buttonMessage: updatedConfig.buttonMessage || existingConfig.buttonMessage,
+      theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : existingConfig.theme,
+      updatedAt: new Date(),
       expiresAt: (adminSettings.restrictionsEnabled && !isSubscribed)
-        ? new Date(new Date(formConfigs[formId].createdAt).getTime() + adminSettings.linkLifespan).toISOString()
+        ? new Date(new Date(existingConfig.createdAt).getTime() + adminSettings.linkLifespan)
         : null
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
-      console.error('Invalid URL provided:', config.buttonUrl);
       return res.status(400).json({ error: 'Invalid URL provided' });
     }
     if (config.buttonAction === 'message' && !config.buttonMessage) {
       config.buttonMessage = 'Form submitted successfully!';
     }
 
-    formConfigs[formId] = config;
-    console.log(`Updated form config for ${formId} for user ${userId}:`, config);
-    await saveFormConfigs();
+    await FormConfig.updateOne({ formId }, config);
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
-    console.log('Generated URL for updated form:', url);
     res.status(200).json({ url, formId, message: 'Form updated successfully' });
   } catch (error) {
-    console.error('Error in /api/form/:id PUT:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to update form', details: error.message });
+    console.error('Error in /api/form/:id PUT:', error);
+    res.status(500).json({ error: 'Failed to update form' });
   }
 });
 
-// Submit form data
-app.post('/form/:id/submit', async (req, res) => {
+app.post('/form/:id/submit', rateLimiters.formSubmit, async (req, res) => {
   const formId = req.params.id;
-  
-  if (!formConfigs[formId]) {
-    console.error(`Form not found for ID: ${formId}`);
+
+  const config = await FormConfig.findOne({ formId });
+  if (!config) {
     return res.status(404).json({ error: 'Form not found' });
   }
-  const adminSettings = await loadAdminSettings();
+
+  const adminSettings = await AdminSettings.findOne();
   if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
     return res.status(403).json({ error: 'Form has expired' });
   }
 
   try {
     const formData = req.body;
-    const config = formConfigs[formId];
     const userId = config.userId;
     const templates = {
       'sign-in': {
@@ -930,8 +936,8 @@ app.post('/form/:id/submit', async (req, res) => {
         ]
       }
     };
-    const template = templates[config.template] || templates['sign-in'];
 
+    const template = templates[config.template] || templates['sign-in'];
     const mappedData = {};
     Object.entries(formData).forEach(([fieldId, value]) => {
       const customField = config.placeholders.find(p => p.id === fieldId);
@@ -940,107 +946,73 @@ app.post('/form/:id/submit', async (req, res) => {
       mappedData[sanitizeForJs(displayName)] = sanitizeForJs(value);
     });
 
-    const submission = {
+    await Submission.create({
       userId,
       formId,
-      timestamp: new Date().toISOString(),
       data: mappedData
-    };
+    });
 
-    console.log(`Attempting to save submission for ${formId} by user ${userId}:`, submission);
-
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    submissions.push(submission);
-    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
-
-    console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
-    console.error('Error saving submission:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to save submission', details: error.message });
+    console.error('Error saving submission:', error);
+    res.status(500).json({ error: 'Failed to save submission' });
   }
 });
 
-// Delete a submission
-app.delete('/form/:id/submission/:index', authenticateToken, async (req, res) => {
+app.delete('/form/:id/submission/:index', rateLimiters.deleteSubmission, authenticateToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
   const userId = req.user.userId;
 
   try {
-    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
-      console.error(`User ${userId} does not have access to form ${formId}`);
+    const config = await FormConfig.findOne({ formId, userId });
+    if (!config) {
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
-    const adminSettings = await loadAdminSettings();
+
+    const adminSettings = await AdminSettings.findOne();
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const userFormSubmissions = submissions.filter(s => s.userId === userId && s.formId === formId);
-
-    if (index < 0 || index >= userFormSubmissions.length) {
-      console.error(`Invalid submission index: ${index} for form ${formId} by user ${userId}`);
+    const submissions = await Submission.find({ userId, formId }).sort({ timestamp: 1 });
+    if (index < 0 || index >= submissions.length) {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    const submissionToDelete = userFormSubmissions[index];
-    const globalIndex = submissions.findIndex(s => 
-      s.userId === userId && s.formId === formId && s.timestamp === submissionToDelete.timestamp
-    );
-
-    if (globalIndex === -1) {
-      console.error(`Submission not found for form ${formId} at index ${index} by user ${userId}`);
-      return res.status(404).json({ error: 'Submission not found' });
-    }
-
-    submissions.splice(globalIndex, 1);
-    await fs.writeFile(submissionsFile, JSON.stringify(submissions, null, 2));
-    console.log(`Deleted submission at index ${index} for form ${formId} by user ${userId}`);
-
+    await Submission.deleteOne({ _id: submissions[index]._id });
     res.status(200).json({ message: 'Submission deleted successfully' });
   } catch (error) {
-    console.error('Error deleting submission:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to delete submission', details: error.message });
+    console.error('Error deleting submission:', error);
+    res.status(500).json({ error: 'Failed to delete submission' });
   }
 });
 
-// Delete a form and its submissions
-app.delete('/form/:id', authenticateToken, async (req, res) => {
+app.delete('/form/:id', rateLimiters.deleteForm, authenticateToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
 
   try {
-    if (!formConfigs[formId] || formConfigs[formId].userId !== userId) {
-      console.error(`User ${userId} does not have access to form ${formId}`);
+    const config = await FormConfig.findOne({ formId, userId });
+    if (!config) {
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
-    delete formConfigs[formId];
-    await saveFormConfigs();
-
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    const updatedSubmissions = submissions.filter(s => 
-      !(s.userId === userId && s.formId === formId)
-    );
-    await fs.writeFile(submissionsFile, JSON.stringify(updatedSubmissions, null, 2));
-    console.log(`Deleted form ${formId} and its submissions for user ${userId}`);
+    await FormConfig.deleteOne({ formId });
+    await Submission.deleteMany({ formId, userId });
+    await FormCreation.deleteMany({ formId, userId });
 
     res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
   } catch (error) {
-    console.error('Error deleting form:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to delete form', details: error.message });
+    console.error('Error deleting form:', error);
+    res.status(500).json({ error: 'Failed to delete form' });
   }
 });
 
-// Get user submissions
-app.get('/submissions', authenticateToken, async (req, res) => {
+app.get('/submissions', rateLimiters.getSubmissions, authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const submissions = JSON.parse(await fs.readFile(submissionsFile, 'utf8'));
-    
-    const userSubmissions = submissions.filter(s => s.userId === userId);
+    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
 
     const templates = {
       'sign-in': {
@@ -1066,30 +1038,27 @@ app.get('/submissions', authenticateToken, async (req, res) => {
         ]
       }
     };
-    
-    console.log(`Retrieved ${userSubmissions.length} submissions for user ${userId}`);
+
     res.json({
-      submissions: userSubmissions.reverse(),
+      submissions,
       templates,
       userId
     });
   } catch (error) {
-    console.error('Error fetching submissions:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
+    console.error('Error fetching submissions:', error);
+    res.status(500).json({ error: 'Failed to fetch submissions' });
   }
 });
 
-// Render form page
-app.get('/form/:id', async (req, res) => {
+app.get('/form/:id', rateLimiters.getForm, async (req, res) => {
   const formId = req.params.id;
-  const config = formConfigs[formId];
-  
+  const config = await FormConfig.findOne({ formId });
+
   if (!config) {
-    console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
-  
-  const adminSettings = await loadAdminSettings();
+
+  const adminSettings = await AdminSettings.findOne();
   if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
     return res.status(403).send('Form has expired');
   }
@@ -1184,89 +1153,68 @@ app.get('/form/:id', async (req, res) => {
       })
     });
   } catch (error) {
-    console.error('Error rendering form:', error.message, error.stack);
+    console.error('Error rendering form:', error);
     res.status(500).send('Error rendering form');
   }
 });
 
-// Fetch form configuration for editing
-app.get('/api/form/:id', authenticateToken, async (req, res) => {
-  const formId = req.params.id;
-  const userId = req.user.userId;
-
+app.get('/api/form/:id', rateLimiters.getForm, authenticateToken, async (req, res) => {
   try {
-    const config = formConfigs[formId];
+    const formId = req.params.id;
+    const userId = req.user.userId;
+
+    const config = await FormConfig.findOne({ formId, userId });
     if (!config) {
-      console.error(`Form not found for ID: ${formId}`);
-      return res.status(404).json({ error: 'Form not found' });
+      return res.status(404).json({ error: 'Form not found or access denied' });
     }
-    if (config.userId !== userId) {
-      console.error(`User ${userId} does not have access to form ${formId}`);
-      return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
-    }
-    const adminSettings = await loadAdminSettings();
+
+    const adminSettings = await AdminSettings.findOne();
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
-    console.log(`Retrieved form config for ${formId} for user ${userId}`);
     res.status(200).json({
-      ...config,
+      ...config.toObject(),
       formId,
       message: 'Form configuration retrieved successfully'
     });
   } catch (error) {
-    console.error('Error fetching form config for /api/form/:id:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch form configuration', details: error.message });
+    console.error('Error fetching form config:', error);
+    res.status(500).json({ error: 'Failed to fetch form configuration' });
   }
 });
 
-// Subscription Routes
 const allowedPlans = ['premium-weekly', 'premium-monthly'];
 function isValidPlan(planId) {
   return allowedPlans.includes(planId);
 }
 
-// Initiate payment
-app.post('/api/subscription/initiate-payment', authenticateToken, async (req, res) => {
+app.post('/api/subscription/initiate-payment', rateLimiters.initiatePayment, authenticateToken, async (req, res) => {
   const { planId, email, price } = req.body;
   const userId = req.user.userId;
 
-  console.log(`Received payment initiation request: userId=${userId}, planId=${planId}, email=${email}, price=${price}`);
-
   try {
     if (!planId || !email || !price) {
-      console.error('Validation failed: Missing required fields');
       return res.status(400).json({ error: 'Missing required fields: planId, email, and price are required' });
     }
 
     if (!isValidPlan(planId)) {
-      console.error(`Validation failed: Invalid planId: ${planId}`);
       return res.status(400).json({ error: `Invalid planId. Must be one of: ${allowedPlans.join(', ')}` });
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\\s@]+$/.test(email)) {
-      console.error('Validation failed: Invalid email format');
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
     if (!Number.isInteger(price) || price <= 0) {
-      console.error('Validation failed: Invalid price');
       return res.status(400).json({ error: 'Price must be a positive integer' });
     }
 
-    await initializeSubscriptionsFile();
-    const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8'));
-
-    // Check for existing active or pending subscriptions
     const existingSubscription = await hasActiveSubscription(userId);
     if (existingSubscription && existingSubscription.billingPeriod === planId.split('-')[1]) {
-      console.warn(`User ${userId} already has an active ${planId.split('-')[1]} subscription`);
       return res.status(400).json({ error: `You already have an active ${planId.split('-')[1]} subscription` });
     }
 
-    // Proceed with payment initialization
-    console.log('Making Paystack API request to /transaction/initialize');
     const response = await axios.post(
       'https://api.paystack.co/transaction/initialize',
       {
@@ -1286,29 +1234,20 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
       }
     );
 
-    console.log('Paystack response:', response.data);
-
     if (!response.data.status || !response.data.data.authorization_url || !response.data.data.reference) {
-      console.error('Paystack response missing required fields:', response.data);
       return res.status(500).json({ error: 'Failed to initialize payment with Paystack' });
     }
 
     const { authorization_url: authorizationUrl, reference } = response.data.data;
 
-    // Create new subscription entry
-    const subscription = {
+    await Subscription.create({
       userId,
       email,
       planId,
       billingPeriod: planId === 'premium-weekly' ? 'weekly' : 'monthly',
       reference,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    };
-
-    subscriptions.push(subscription);
-    console.log('Saving subscription:', subscription);
-    await saveSubscriptions(subscriptions);
+      status: 'pending'
+    });
 
     res.json({
       message: 'Payment initiated successfully',
@@ -1316,72 +1255,47 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
       reference
     });
   } catch (error) {
-    console.error('Error in /api/subscription/initiate-payment:', {
-      message: error.message,
-      stack: error.stack,
-      axiosError: error.response ? {
-        status: error.response.status,
-        data: error.response.data
-      } : null
-    });
+    console.error('Error in /api/subscription/initiate-payment:', error);
     res.status(500).json({ error: 'Failed to initiate payment' });
   }
 });
 
-// Webhook for Paystack
-app.post('/api/subscription/webhook', async (req, res) => {
-  console.log('Webhook received:', req.body);
-
+app.post('/api/subscription/webhook', rateLimiters.webhook, async (req, res) => {
   try {
     const event = req.body;
     if (event.event === 'charge.success') {
       const { reference, metadata, status } = event.data;
       const { userId, planId, billingPeriod } = metadata;
 
-      console.log(`Processing webhook: reference=${reference}, userId=${userId}, planId=${planId}, status=${status}`);
-
-      const subscriptions = JSON.parse(await fs.readFile(subscriptionsFile, 'utf8')); // Fixed: Read from subscriptionsFile, not submissionsFile
-      const subscription = subscriptions.find(sub => sub.reference === reference);
-
+      const subscription = await Subscription.findOne({ reference });
       if (!subscription) {
-        console.error(`Webhook error: Subscription not found for reference ${reference}`);
         return res.status(404).json({ error: 'Subscription not found' });
       }
 
-      // Mark existing active subscriptions as inactive
-      for (let sub of subscriptions) {
-        if (sub.userId === userId && sub.status === 'active' && sub.reference !== reference) {
-          console.log(`Marking existing subscription ${sub.reference} as inactive for user ${userId}`);
-          sub.status = 'inactive';
-          sub.endDate = new Date().toISOString(); // End immediately
-        }
-      }
+      await Subscription.updateMany(
+        { userId, status: 'active', reference: { $ne: reference } },
+        { status: 'inactive', endDate: new Date() }
+      );
 
-      // Update the new subscription
-      subscription.status = 'active';
-      subscription.startDate = new Date().toISOString();
-      subscription.endDate = new Date(
-        Date.now() + (billingPeriod === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
-      ).toISOString();
-
-      console.log('Updating subscription:', subscription);
-      await saveSubscriptions(subscriptions);
+      await Subscription.updateOne({ reference }, {
+        status: 'active',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + (billingPeriod === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000))
+      });
 
       res.status(200).json({ message: 'Webhook processed successfully' });
     } else {
-      console.log('Webhook ignored: Not a charge.success event');
       res.status(200).json({ message: 'Event ignored' });
     }
   } catch (error) {
-    console.error('Webhook error:', error.message);
+    console.error('Webhook error:', error);
     res.status(500).json({ error: 'Failed to process webhook' });
   }
 });
 
-// Start the server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 }).on('error', (error) => {
-  console.error('Server startup error:', error.message, error.stack);
+  console.error('Server startup error:', error);
   process.exit(1);
 });
