@@ -9,6 +9,7 @@ const ejs = require('ejs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
