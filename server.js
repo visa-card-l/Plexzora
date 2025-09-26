@@ -20,14 +20,26 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/form_app';
 
 // MongoDB Connection
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => console.log('Connected to MongoDB'))
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 30000, // 30-second timeout for server selection
+      socketTimeoutMS: 45000, // 45-second socket timeout
+    });
+    console.log('Connected to MongoDB');
+
+    // Event listeners for connection status
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+    });
+    mongoose.connection.on('disconnected', () => {
+      console.log('MongoDB disconnected');
+    });
+  } catch (err) {
+    console.error('MongoDB connection failed:', err);
     process.exit(1);
-  });
+  }
+};
 
 // MongoDB Schemas
 const UserSchema = new mongoose.Schema({
@@ -105,28 +117,23 @@ const Subscription = mongoose.model('Subscription', SubscriptionSchema);
 
 // Initialize default admin settings
 async function initializeAdminSettings() {
-  const existingSettings = await AdminSettings.findOne();
-  if (!existingSettings) {
-    await AdminSettings.create({
-      linkLifespan: 604800000, // 7 days in milliseconds
-      linkLifespanValue: 7,
-      linkLifespanUnit: 'days',
-      maxFormsPerUserPerDay: 10,
-      restrictionsEnabled: true
-    });
-    console.log('Created default admin settings');
+  try {
+    const existingSettings = await AdminSettings.findOne();
+    if (!existingSettings) {
+      await AdminSettings.create({
+        linkLifespan: 604800000, // 7 days in milliseconds
+        linkLifespanValue: 7,
+        linkLifespanUnit: 'days',
+        maxFormsPerUserPerDay: 10,
+        restrictionsEnabled: true
+      });
+      console.log('Created default admin settings');
+    }
+  } catch (err) {
+    console.error('Failed to initialize admin settings:', err.message, err.stack);
+    throw err; // Rethrow to handle in the startServer function
   }
 }
-
-// Run initialization
-(async () => {
-  try {
-    await initializeAdminSettings();
-  } catch (err) {
-    console.error('Initialization failed:', err.message, err.stack);
-    process.exit(1);
-  }
-})();
 
 // Rate Limit Store Configuration
 const mongoStore = (collectionName, expireTimeMs = 60 * 1000) => new MongoStore({
@@ -1294,9 +1301,21 @@ app.post('/api/subscription/webhook', rateLimiters.webhook, async (req, res) => 
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-}).on('error', (error) => {
-  console.error('Server startup error:', error);
-  process.exit(1);
-});
+// Start the server
+const startServer = async () => {
+  try {
+    await connectDB(); // Connect to MongoDB
+    await initializeAdminSettings(); // Initialize admin settings after connection
+    app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+    }).on('error', (error) => {
+      console.error('Server startup error:', error);
+      process.exit(1);
+    });
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
+};
+
+startServer();
