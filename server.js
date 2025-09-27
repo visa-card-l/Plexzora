@@ -1,15 +1,11 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const rateLimit = require('express-rate-limit');
-const MongoStore = require('rate-limit-mongo');
-const sanitize = require('mongo-sanitize');
-const helmet = require('helmet');
-const cors = require('cors');
+const bodyParser = require('body-parser');
 const ejs = require('ejs');
+const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const path = require('path');
+const mongoose = require('mongoose');
 require('dotenv').config();
 
 const app = express();
@@ -17,340 +13,124 @@ const port = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/form_app';
 
 // MongoDB Connection
-const connectDB = async () => {
-  try {
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 30000, // 30-second timeout for server selection
-      socketTimeoutMS: 45000, // 45-second socket timeout
-    });
-    console.log('Connected to MongoDB');
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
 
-    // Event listeners for connection status
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB connection error:', err);
-    });
-    mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB disconnected');
-    });
-  } catch (err) {
-    console.error('MongoDB connection failed:', err);
-    process.exit(1);
-  }
-};
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => {
+  console.log('Connected to MongoDB');
+}).catch(err => {
+  console.error('MongoDB connection error:', err.message, err.stack);
+  process.exit(1);
+});
 
-// MongoDB Schemas
-const UserSchema = new mongoose.Schema({
+// Mongoose Schemas with Indexes
+const submissionSchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  formId: { type: String, required: true, index: true },
+  timestamp: { type: Date, default: Date.now, index: true },
+  data: { type: Object, required: true },
+}, { timestamps: true });
+
+const formConfigSchema = new mongoose.Schema({
+  formId: { type: String, required: true, unique: true, index: true },
+  userId: { type: String, required: true, index: true },
+  template: { type: String, required: true },
+  headerText: String,
+  headerColors: [String],
+  subheaderText: String,
+  subheaderColor: String,
+  placeholders: [{ id: String, placeholder: String }],
+  borderShadow: String,
+  buttonColor: String,
+  buttonTextColor: String,
+  buttonText: String,
+  buttonAction: String,
+  buttonUrl: String,
+  buttonMessage: String,
+  theme: String,
+  createdAt: { type: Date, default: Date.now, index: true },
+  expiresAt: { type: Date, index: true },
+}, { timestamps: true });
+
+const formCreationSchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  formId: { type: String, required: true, index: true },
+  createdAt: { type: Date, default: Date.now, index: true },
+}, { timestamps: true });
+
+const userSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
-  username: { type: String, default: '' },
-  email: { type: String, required: true, unique: true },
+  username: String,
+  email: { type: String, required: true, unique: true, index: true },
   password: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date }
-});
+}, { timestamps: true });
 
-const FormConfigSchema = new mongoose.Schema({
-  formId: { type: String, required: true, unique: true },
-  userId: { type: String, required: true },
-  template: { type: String, required: true },
-  headerText: { type: String, default: 'My Form' },
-  headerColors: [{ type: String }],
-  subheaderText: { type: String, default: 'Fill the form' },
-  subheaderColor: { type: String },
-  placeholders: [{
-    id: String,
-    placeholder: String
-  }],
-  borderShadow: { type: String },
-  buttonColor: { type: String },
-  buttonTextColor: { type: String },
-  buttonText: { type: String },
-  buttonAction: { type: String, enum: ['url', 'message'] },
-  buttonUrl: { type: String },
-  buttonMessage: { type: String },
-  theme: { type: String, enum: ['light', 'dark'], default: 'light' },
-  createdAt: { type: Date, default: Date.now },
-  expiresAt: { type: Date }
-});
+const adminSettingsSchema = new mongoose.Schema({
+  linkLifespan: Number,
+  linkLifespanValue: Number,
+  linkLifespanUnit: String,
+  maxFormsPerUserPerDay: Number,
+  restrictionsEnabled: { type: Boolean, default: true },
+}, { timestamps: true });
 
-const SubmissionSchema = new mongoose.Schema({
-  userId: { type: String, required: true },
-  formId: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
-  data: { type: Object, required: true }
-});
+const subscriptionSchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  email: String,
+  planId: String,
+  billingPeriod: String,
+  reference: { type: String, unique: true, index: true },
+  status: String,
+  startDate: Date,
+  endDate: Date,
+  createdAt: { type: Date, default: Date.now, index: true },
+}, { timestamps: true });
 
-const AdminSettingsSchema = new mongoose.Schema({
-  linkLifespan: { type: Number },
-  linkLifespanValue: { type: Number },
-  linkLifespanUnit: { type: String, enum: ['seconds', 'minutes', 'hours', 'days'] },
-  maxFormsPerUserPerDay: { type: Number },
-  restrictionsEnabled: { type: Boolean, default: true }
-});
+// Create models
+const Submission = mongoose.model('Submission', submissionSchema);
+const FormConfig = mongoose.model('FormConfig', formConfigSchema);
+const FormCreation = mongoose.model('FormCreation', formCreationSchema);
+const User = mongoose.model('User', userSchema);
+const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
+const Subscription = mongoose.model('Subscription', subscriptionSchema);
 
-const FormCreationSchema = new mongoose.Schema({
-  userId: { type: String, required: true },
-  formId: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const SubscriptionSchema = new mongoose.Schema({
-  userId: { type: String, required: true },
-  email: { type: String, required: true },
-  planId: { type: String, required: true },
-  billingPeriod: { type: String, enum: ['weekly', 'monthly'], required: true },
-  reference: { type: String, required: true, unique: true },
-  status: { type: String, enum: ['pending', 'active', 'inactive'], required: true },
-  createdAt: { type: Date, default: Date.now },
-  startDate: { type: Date },
-  endDate: { type: Date }
-});
-
-const User = mongoose.model('User', UserSchema);
-const FormConfig = mongoose.model('FormConfig', FormConfigSchema);
-const Submission = mongoose.model('Submission', SubmissionSchema);
-const AdminSettings = mongoose.model('AdminSettings', AdminSettingsSchema);
-const FormCreation = mongoose.model('FormCreation', FormCreationSchema);
-const Subscription = mongoose.model('Subscription', SubscriptionSchema);
-
-// Initialize default admin settings
+// Initialize default admin settings if none exist
 async function initializeAdminSettings() {
-  try {
-    const existingSettings = await AdminSettings.findOne();
-    if (!existingSettings) {
-      await AdminSettings.create({
-        linkLifespan: 604800000, // 7 days in milliseconds
-        linkLifespanValue: 7,
-        linkLifespanUnit: 'days',
-        maxFormsPerUserPerDay: 10,
-        restrictionsEnabled: true
-      });
-      console.log('Created default admin settings');
-    }
-  } catch (err) {
-    console.error('Failed to initialize admin settings:', err.message, err.stack);
-    throw err; // Rethrow to handle in the startServer function
+  const settings = await AdminSettings.findOne();
+  if (!settings) {
+    await AdminSettings.create({
+      linkLifespan: 604800000, // 7 days in milliseconds
+      linkLifespanValue: 7,
+      linkLifespanUnit: 'days',
+      maxFormsPerUserPerDay: 10,
+      restrictionsEnabled: true,
+    });
+    console.log('Created default admin settings');
   }
 }
 
-// Rate Limit Store Configuration
-const mongoStore = (collectionName, expireTimeMs = 60 * 1000) => new MongoStore({
-  uri: MONGODB_URI,
-  collectionName,
-  expireTimeMs
-});
-
-// Rate Limiters
-const rateLimiters = {
-  signup: rateLimit({
-    store: mongoStore('signup_limits'),
-    windowMs: 60 * 1000,
-    max: 10,
-    keyGenerator: (req) => req.ip
-  }),
-
-  login: [
-    rateLimit({
-      store: mongoStore('login_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 10,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('login_email_limits'),
-      windowMs: 60 * 1000,
-      max: 3,
-      keyGenerator: (req) => sanitize(req.body.email)
-    })
-  ],
-
-  forgotPassword: [
-    rateLimit({
-      store: mongoStore('forgot_password_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('forgot_password_email_limits'),
-      windowMs: 5 * 60 * 1000,
-      max: 1,
-      keyGenerator: (req) => sanitize(req.body.email)
-    })
-  ],
-
-  resetPassword: [
-    rateLimit({
-      store: mongoStore('reset_password_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('reset_password_email_limits'),
-      windowMs: 10 * 60 * 1000,
-      max: 1,
-      keyGenerator: (req) => sanitize(req.body.email)
-    })
-  ],
-
-  adminSettings: rateLimit({
-    store: mongoStore('admin_settings_limits'),
-    windowMs: 60 * 1000,
-    max: 5,
-    keyGenerator: (req) => req.ip
-  }),
-
-  create: [
-    rateLimit({
-      store: mongoStore('create_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 10,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('create_user_limits'),
-      windowMs: 60 * 1000,
-      max: async (req) => {
-        const user = await User.findById(req.user?.userId);
-        const subscription = await Subscription.findOne({ userId: req.user?.userId, status: 'active' });
-        return subscription ? 10 : 2;
-      },
-      keyGenerator: (req) => req.user?.userId
-    })
-  ],
-
-  formSubmit: [
-    rateLimit({
-      store: mongoStore('form_submit_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 20,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('form_submit_form_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.params.id
-    })
-  ],
-
-  initiatePayment: [
-    rateLimit({
-      store: mongoStore('payment_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('payment_email_limits'),
-      windowMs: 5 * 60 * 1000,
-      max: 2,
-      keyGenerator: (req) => sanitize(req.body.email)
-    })
-  ],
-
-  webhook: rateLimit({
-    store: mongoStore('webhook_limits'),
-    windowMs: 60 * 1000,
-    max: 20,
-    keyGenerator: (req) => req.ip
-  }),
-
-  getForm: rateLimit({
-    store: mongoStore('get_form_limits'),
-    windowMs: 60 * 1000,
-    max: 50,
-    keyGenerator: (req) => req.ip
-  }),
-
-  getUser: [
-    rateLimit({
-      store: mongoStore('get_user_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 20,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('get_user_limits'),
-      windowMs: 60 * 1000,
-      max: 20,
-      keyGenerator: (req) => req.user?.userId
-    })
-  ],
-
-  getSubmissions: [
-    rateLimit({
-      store: mongoStore('get_submissions_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 20,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('get_submissions_limits'),
-      windowMs: 60 * 1000,
-      max: 20,
-      keyGenerator: (req) => req.user?.userId
-    })
-  ],
-
-  updateForm: [
-    rateLimit({
-      store: mongoStore('update_form_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('update_form_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.user?.userId
-    })
-  ],
-
-  deleteForm: [
-    rateLimit({
-      store: mongoStore('delete_form_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('delete_form_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.user?.userId
-    })
-  ],
-
-  deleteSubmission: [
-    rateLimit({
-      store: mongoStore('delete_submission_ip_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.ip
-    }),
-    rateLimit({
-      store: mongoStore('delete_submission_limits'),
-      windowMs: 60 * 1000,
-      max: 5,
-      keyGenerator: (req) => req.user?.userId
-    })
-  ]
-};
+// Initialize MongoDB
+(async () => {
+  try {
+    await initializeAdminSettings();
+  } catch (err) {
+    console.error('Initialization failed:', err.message, err.stack);
+    process.exit(1);
+  }
+})();
 
 // Middleware
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
-  credentials: false
+  credentials: false,
 }));
-app.use(express.json());
-app.use(helmet());
+app.use(bodyParser.json());
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -363,7 +143,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Utility Functions
+// Utility to normalize URLs
 function normalizeUrl(url) {
   if (!url) return null;
   url = url.trim();
@@ -372,23 +152,21 @@ function normalizeUrl(url) {
   return null;
 }
 
-function generateShortCode(length = 6) {
+// Utility to generate a short, unique code
+async function generateShortCode(length = 6) {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let code = '';
   for (let i = 0; i < length; i++) {
     code += characters.charAt(Math.floor(Math.random() * characters.length));
   }
-  return code;
-}
-
-async function checkUniqueFormId(code) {
   const existing = await FormConfig.findOne({ formId: code });
   if (existing) {
-    return generateShortCode();
+    return generateShortCode(length);
   }
   return code;
 }
 
+// Utility to sanitize strings
 function sanitizeForJs(str) {
   if (!str) return '';
   return str
@@ -401,6 +179,7 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
+// Utility to check if form is expired
 async function isFormExpired(formId) {
   const config = await FormConfig.findOne({ formId });
   if (!config || !config.createdAt) {
@@ -409,10 +188,9 @@ async function isFormExpired(formId) {
   }
 
   const adminSettings = await AdminSettings.findOne();
-  const subscription = await Subscription.findOne({ userId: config.userId, status: 'active' });
-
-  if (subscription || !adminSettings.restrictionsEnabled) {
-    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${!!subscription}, restrictionsEnabled=${adminSettings.restrictionsEnabled}`);
+  const isSubscribed = await hasActiveSubscription(config.userId);
+  if (isSubscribed || !adminSettings.restrictionsEnabled) {
+    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${!!isSubscribed}, restrictionsEnabled=${adminSettings.restrictionsEnabled}`);
     return false;
   }
 
@@ -429,11 +207,14 @@ async function isFormExpired(formId) {
     console.log(`Form ${formId} is expired, deleting form and submissions`);
     await FormConfig.deleteOne({ formId });
     await Submission.deleteMany({ formId });
+    console.log(`Deleted form ${formId} and its submissions`);
   }
 
+  console.log(`Form ${formId} expiration check: createdAt=${config.createdAt}, currentTime=${currentTime}, linkLifespan=${adminSettings.linkLifespan}, isExpired=${isExpired}`);
   return isExpired;
 }
 
+// Utility to count user's forms created today
 async function countUserFormsToday(userId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -442,36 +223,46 @@ async function countUserFormsToday(userId) {
 
   const count = await FormCreation.countDocuments({
     userId,
-    createdAt: { $gte: new Date(todayStart), $lt: new Date(todayEnd) }
+    createdAt: { $gte: new Date(todayStart), $lt: new Date(todayEnd) },
   });
 
   console.log(`Counted ${count} forms created today for user ${userId}`);
   return count;
 }
 
+// Utility to get total user count
 async function getUserCount() {
   return await User.countDocuments();
 }
 
+// Utility to get count of active subscribers
 async function getSubscriberCount() {
-  const count = await Subscription.countDocuments({
+  const activeSubscribers = await Subscription.countDocuments({
     status: 'active',
-    endDate: { $gt: new Date() }
+    endDate: { $gt: new Date() },
   });
-  console.log(`Counted ${count} active subscribers`);
-  return count;
+  console.log(`Counted ${activeSubscribers} active subscribers`);
+  return activeSubscribers;
 }
 
+// Utility to check if user has an active subscription
 async function hasActiveSubscription(userId) {
-  const subscription = await Subscription.findOne({
-    userId,
-    status: 'active',
-    endDate: { $gt: new Date() }
-  }).sort({ createdAt: -1 });
-  console.log(`User ${userId} has active subscription: ${!!subscription}`);
-  return subscription;
+  try {
+    const activeSubscription = await Subscription.findOne({
+      userId,
+      status: 'active',
+      endDate: { $gt: new Date() },
+    }).sort({ createdAt: -1 }); // Get the latest active subscription
+    const hasActive = !!activeSubscription;
+    console.log(`User ${userId} has active subscription: ${hasActive}`, activeSubscription || {});
+    return activeSubscription; // Return the subscription object or null
+  } catch (error) {
+    console.error('Error checking subscription status:', error.message);
+    return null;
+  }
 }
 
+// JWT verification middleware
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -482,6 +273,7 @@ function authenticateToken(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('Token decoded:', decoded);
     req.user = decoded;
     next();
   } catch (error) {
@@ -490,6 +282,7 @@ function authenticateToken(req, res, next) {
   }
 }
 
+// Admin password verification middleware
 function verifyAdminPassword(req, res, next) {
   const { adminPassword } = req.body;
   if (!adminPassword || !bcrypt.compareSync(adminPassword, ADMIN_PASSWORD_HASH)) {
@@ -498,16 +291,18 @@ function verifyAdminPassword(req, res, next) {
   next();
 }
 
-// Routes
-app.get('/user', rateLimiters.getUser, authenticateToken, async (req, res) => {
+// Auth Route: Get current user info
+app.get('/user', authenticateToken, async (req, res) => {
   try {
     const user = await User.findOne({ id: req.user.userId });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    const { id, username, email, createdAt } = user;
     res.json({
-      user: { id: user.id, username: user.username, email: user.email, createdAt: user.createdAt },
-      message: 'User info retrieved successfully'
+      user: { id, username, email, createdAt },
+      message: 'User info retrieved successfully',
     });
   } catch (error) {
     console.error('Error fetching user info:', error);
@@ -515,7 +310,8 @@ app.get('/user', rateLimiters.getUser, authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/signup', rateLimiters.signup, async (req, res) => {
+// Auth Route: Signup
+app.post('/signup', async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!email || !password) {
@@ -527,13 +323,18 @@ app.post('/signup', rateLimiters.signup, async (req, res) => {
       return res.status(400).json({ error: 'User already exists with this email' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const newUser = new User({
       id: Date.now().toString(),
       username: username || '',
       email,
-      password: hashedPassword
+      password: hashedPassword,
+      createdAt: new Date().toISOString(),
     });
+
+    await newUser.save();
 
     const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: '1h' });
     res.status(201).json({ message: 'User created successfully', token });
@@ -543,7 +344,8 @@ app.post('/signup', rateLimiters.signup, async (req, res) => {
   }
 });
 
-app.post('/login', rateLimiters.login, async (req, res) => {
+// Auth Route: Login
+app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -568,7 +370,8 @@ app.post('/login', rateLimiters.login, async (req, res) => {
   }
 });
 
-app.post('/forgot-password', rateLimiters.forgotPassword, async (req, res) => {
+// Auth Route: Forgot Password
+app.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
@@ -587,7 +390,8 @@ app.post('/forgot-password', rateLimiters.forgotPassword, async (req, res) => {
   }
 });
 
-app.post('/reset-password', rateLimiters.resetPassword, async (req, res) => {
+// Auth Route: Reset Password
+app.post('/reset-password', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -599,11 +403,12 @@ app.post('/reset-password', rateLimiters.resetPassword, async (req, res) => {
       return res.status(404).json({ error: 'Email not found' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await User.updateOne({ email }, {
-      password: hashedPassword,
-      updatedAt: new Date()
-    });
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    user.password = hashedPassword;
+    user.updatedAt = new Date().toISOString();
+
+    await user.save();
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
@@ -612,6 +417,7 @@ app.post('/reset-password', rateLimiters.resetPassword, async (req, res) => {
   }
 });
 
+// Admin Route: Render admin settings page
 app.get('/admin', async (req, res) => {
   try {
     const adminSettings = await AdminSettings.findOne();
@@ -631,15 +437,16 @@ app.get('/admin', async (req, res) => {
       restrictionsEnabled: adminSettings.restrictionsEnabled,
       linkLifespanValue: adminSettings.linkLifespanValue,
       linkLifespanUnit: adminSettings.linkLifespanUnit,
-      maxFormsPerUserPerDay: adminSettings.maxFormsPerUserPerDay
+      maxFormsPerUserPerDay: adminSettings.maxFormsPerUserPerDay,
     });
   } catch (error) {
-    console.error('Error rendering admin page:', error);
+    console.error('Error rendering admin page:', error.message, error.stack);
     res.status(500).send('Error rendering admin page');
   }
 });
 
-app.post('/admin/settings', rateLimiters.adminSettings, verifyAdminPassword, async (req, res) => {
+// Admin Route: Set global settings
+app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
   try {
     const { linkLifespanValue, linkLifespanUnit, maxFormsPerUserPerDay, restrictionsEnabled } = req.body;
 
@@ -677,6 +484,8 @@ app.post('/admin/settings', rateLimiters.adminSettings, verifyAdminPassword, asy
         case 'days':
           lifespanMs = value * 24 * 60 * 60 * 1000;
           break;
+        default:
+          return res.status(400).json({ error: 'Invalid link lifespan unit' });
       }
     }
 
@@ -685,7 +494,7 @@ app.post('/admin/settings', rateLimiters.adminSettings, verifyAdminPassword, asy
       linkLifespanValue: restrictionsEnabled ? Number(linkLifespanValue) : null,
       linkLifespanUnit: restrictionsEnabled ? linkLifespanUnit : null,
       maxFormsPerUserPerDay: restrictionsEnabled ? Number(maxFormsPerUserPerDay) : null,
-      restrictionsEnabled: !!restrictionsEnabled
+      restrictionsEnabled: !!restrictionsEnabled,
     };
 
     await AdminSettings.updateOne({}, adminSettings, { upsert: true });
@@ -693,45 +502,52 @@ app.post('/admin/settings', rateLimiters.adminSettings, verifyAdminPassword, asy
 
     if (adminSettings.restrictionsEnabled) {
       const expiredForms = await FormConfig.find({
-        expiresAt: { $lte: new Date() }
+        expiresAt: { $lte: new Date() },
       });
       const expiredFormIds = expiredForms.map(f => f.formId);
+
       if (expiredFormIds.length > 0) {
         await FormConfig.deleteMany({ formId: { $in: expiredFormIds } });
         await Submission.deleteMany({ formId: { $in: expiredFormIds } });
-        console.log(`Deleted ${expiredFormIds.length} expired forms`);
+        console.log(`Deleted ${expiredFormIds.length} expired forms during admin settings update`);
       }
     }
 
     res.status(200).json({
       message: 'Admin settings updated successfully',
-      settings: adminSettings
+      settings: adminSettings,
     });
   } catch (error) {
-    console.error('Error updating admin settings:', error);
-    res.status(500).json({ error: 'Failed to update admin settings' });
+    console.error('Error updating admin settings:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to update admin settings', details: error.message });
   }
 });
 
+// Protected Routes - WITH USER ISOLATION
 app.get('/get', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
+    console.log(`Processing /get request for user ${userId}`);
+
+    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
+    console.log(`Retrieved ${submissions.length} submissions for user ${userId}`);
+
     const adminSettings = await AdminSettings.findOne();
-    const subscription = await hasActiveSubscription(userId);
-    const isSubscribed = !!subscription;
+    console.log(`Loaded admin settings:`, adminSettings);
+
+    const activeSubscription = await hasActiveSubscription(userId);
+    const isSubscribed = !!activeSubscription;
     let subscriptionDetails = null;
     if (isSubscribed) {
       subscriptionDetails = {
-        billingPeriod: subscription.billingPeriod,
-        endDate: subscription.endDate
+        billingPeriod: activeSubscription.billingPeriod,
+        endDate: activeSubscription.endDate,
       };
     }
 
-    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
-    const formConfigs = await FormConfig.find({ userId });
     const userFormConfigs = {};
     const validForms = [];
-
+    const formConfigs = await FormConfig.find({ userId });
     for (const config of formConfigs) {
       const isExpired = await isFormExpired(config.formId);
       if (!isExpired) {
@@ -742,50 +558,64 @@ app.get('/get', authenticateToken, async (req, res) => {
         validForms.push(config.formId);
       }
     }
+    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')})`);
 
     const templates = {
       'sign-in': {
         name: 'Sign In Form',
         fields: [
           { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
-        ]
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } },
+        ],
       },
       'contact': {
         name: 'Contact Form',
         fields: [
           { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
-        ]
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+        ],
       },
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
           { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
-        ]
-      }
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } },
+        ],
+      },
     };
 
-    res.json({
+    const responseData = {
       submissions,
       formConfigs: userFormConfigs,
       templates,
       userId,
       isSubscribed,
-      subscriptionDetails
+      subscriptionDetails,
+    };
+    console.log(`Returning data for user ${userId}:`, {
+      submissionCount: responseData.submissions.length,
+      formConfigCount: Object.keys(responseData.formConfigs).length,
+      templateKeys: Object.keys(responseData.templates),
+      userId: responseData.userId,
+      isSubscribed: responseData.isSubscribed,
+      subscriptionDetails: responseData.subscriptionDetails,
     });
+
+    res.json(responseData);
   } catch (error) {
-    console.error('Error fetching data for /get:', error);
-    res.status(500).json({ error: 'Failed to fetch data' });
+    console.error('Error fetching data for /get:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
   }
 });
 
-app.post('/create', rateLimiters.create, authenticateToken, async (req, res) => {
+// Create new form
+app.post('/create', authenticateToken, async (req, res) => {
   try {
+    console.log('Received /create request:', req.body);
     const userId = req.user.userId;
     const adminSettings = await AdminSettings.findOne();
+
     const isSubscribed = await hasActiveSubscription(userId);
 
     if (!isSubscribed && adminSettings.restrictionsEnabled) {
@@ -796,9 +626,8 @@ app.post('/create', rateLimiters.create, authenticateToken, async (req, res) => 
     }
 
     const templateId = req.body.template || 'sign-in';
-    let formId = await checkUniqueFormId(generateShortCode());
+    const formId = await generateShortCode();
     const validActions = ['url', 'message'];
-
     const config = {
       formId,
       userId,
@@ -809,7 +638,7 @@ app.post('/create', rateLimiters.create, authenticateToken, async (req, res) => 
       subheaderColor: req.body.subheaderColor || (req.body.theme === 'dark' ? '#d1d5db' : '#555555'),
       placeholders: Array.isArray(req.body.placeholders) ? req.body.placeholders.map(p => ({
         id: sanitizeForJs(p.id),
-        placeholder: sanitizeForJs(p.placeholder)
+        placeholder: sanitizeForJs(p.placeholder),
       })) : [],
       borderShadow: req.body.borderShadow || (req.body.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000'),
       buttonColor: req.body.buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)',
@@ -819,37 +648,44 @@ app.post('/create', rateLimiters.create, authenticateToken, async (req, res) => 
       buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
-      expiresAt: !isSubscribed && adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan) : null
+      createdAt: new Date().toISOString(),
+      expiresAt: !isSubscribed && adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null,
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
+      console.error('Invalid URL provided:', config.buttonUrl);
       return res.status(400).json({ error: 'Invalid URL provided' });
     }
     if (config.buttonAction === 'message' && !config.buttonMessage) {
       config.buttonMessage = 'Form submitted successfully!';
     }
 
-    await FormConfig.create(config);
-    await FormCreation.create({ userId, formId, createdAt: new Date() });
+    await new FormCreation({ userId, formId, createdAt: config.createdAt }).save();
+    await new FormConfig(config).save();
+    console.log(`Stored form config for ${formId} for user ${userId}:`, config);
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
+    console.log('Generated URL:', url);
     res.status(200).json({ url, formId, expiresAt: config.expiresAt });
   } catch (error) {
-    console.error('Error in /create:', error);
-    res.status(500).json({ error: 'Failed to generate shareable link' });
+    console.error('Error in /create:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
   }
 });
 
-app.put('/api/form/:id', rateLimiters.updateForm, authenticateToken, async (req, res) => {
+// Update existing form
+app.put('/api/form/:id', authenticateToken, async (req, res) => {
   try {
+    console.log('Received /api/form/:id PUT request:', req.body);
     const formId = req.params.id;
     const userId = req.user.userId;
     const updatedConfig = req.body;
 
     const existingConfig = await FormConfig.findOne({ formId, userId });
     if (!existingConfig) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
@@ -859,33 +695,37 @@ app.put('/api/form/:id', rateLimiters.updateForm, authenticateToken, async (req,
     }
 
     const isSubscribed = await hasActiveSubscription(userId);
-    const validActions = ['url', 'message'];
 
+    const validActions = ['url', 'message'];
     const config = {
+      formId,
+      userId,
       template: updatedConfig.template || existingConfig.template,
-      headerText: updatedConfig.headerText || existingConfig.headerText,
+      headerText: updatedConfig.headerText || existingConfig.headerText || 'My Form',
       headerColors: Array.isArray(updatedConfig.headerColors) ? updatedConfig.headerColors.map(sanitizeForJs) : existingConfig.headerColors,
-      subheaderText: updatedConfig.subheaderText || existingConfig.subheaderText,
-      subheaderColor: updatedConfig.subheaderColor || existingConfig.subheaderColor,
+      subheaderText: updatedConfig.subheaderText || existingConfig.subheaderText || 'Fill the form',
+      subheaderColor: updatedConfig.subheaderColor || existingConfig.subheaderColor || (updatedConfig.theme === 'dark' ? '#d1d5db' : '#555555'),
       placeholders: Array.isArray(updatedConfig.placeholders) ? updatedConfig.placeholders.map(p => ({
         id: sanitizeForJs(p.id),
-        placeholder: sanitizeForJs(p.placeholder)
+        placeholder: sanitizeForJs(p.placeholder),
       })) : existingConfig.placeholders,
-      borderShadow: updatedConfig.borderShadow || existingConfig.borderShadow,
-      buttonColor: updatedConfig.buttonColor || existingConfig.buttonColor,
-      buttonTextColor: updatedConfig.buttonTextColor || existingConfig.buttonTextColor,
-      buttonText: updatedConfig.buttonText || existingConfig.buttonText,
-      buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : existingConfig.buttonAction,
-      buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : existingConfig.buttonUrl,
-      buttonMessage: updatedConfig.buttonMessage || existingConfig.buttonMessage,
-      theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : existingConfig.theme,
-      updatedAt: new Date(),
+      borderShadow: updatedConfig.borderShadow || existingConfig.borderShadow || (updatedConfig.theme === 'dark' ? '0 0 0 2px #ffffff' : '0 0 0 2px #000000'),
+      buttonColor: updatedConfig.buttonColor || existingConfig.buttonColor || 'linear-gradient(45deg, #00b7ff, #0078ff)',
+      buttonTextColor: updatedConfig.buttonTextColor || existingConfig.buttonTextColor || (updatedConfig.buttonColor === '#ffffff' ? '#000000' : '#ffffff'),
+      buttonText: updatedConfig.buttonText || existingConfig.buttonText || 'Sign In',
+      buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : existingConfig.buttonAction || 'url',
+      buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : existingConfig.buttonUrl || '',
+      buttonMessage: updatedConfig.buttonMessage || existingConfig.buttonMessage || '',
+      theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : existingConfig.theme || 'light',
+      createdAt: existingConfig.createdAt,
+      updatedAt: new Date().toISOString(),
       expiresAt: (adminSettings.restrictionsEnabled && !isSubscribed)
-        ? new Date(new Date(existingConfig.createdAt).getTime() + adminSettings.linkLifespan)
-        : null
+        ? new Date(new Date(existingConfig.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
+        : null,
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
+      console.error('Invalid URL provided:', config.buttonUrl);
       return res.status(400).json({ error: 'Invalid URL provided' });
     }
     if (config.buttonAction === 'message' && !config.buttonMessage) {
@@ -893,25 +733,28 @@ app.put('/api/form/:id', rateLimiters.updateForm, authenticateToken, async (req,
     }
 
     await FormConfig.updateOne({ formId }, config);
+    console.log(`Updated form config for ${formId} for user ${userId}:`, config);
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
+    console.log('Generated URL for updated form:', url);
     res.status(200).json({ url, formId, message: 'Form updated successfully' });
   } catch (error) {
-    console.error('Error in /api/form/:id PUT:', error);
-    res.status(500).json({ error: 'Failed to update form' });
+    console.error('Error in /api/form/:id PUT:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to update form', details: error.message });
   }
 });
 
-app.post('/form/:id/submit', rateLimiters.formSubmit, async (req, res) => {
+// Submit form data
+app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
 
   const config = await FormConfig.findOne({ formId });
   if (!config) {
+    console.error(`Form not found for ID: ${formId}`);
     return res.status(404).json({ error: 'Form not found' });
   }
-
   const adminSettings = await AdminSettings.findOne();
   if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
     return res.status(403).json({ error: 'Form has expired' });
@@ -925,27 +768,27 @@ app.post('/form/:id/submit', rateLimiters.formSubmit, async (req, res) => {
         name: 'Sign In Form',
         fields: [
           { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
-        ]
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } },
+        ],
       },
       'contact': {
         name: 'Contact Form',
         fields: [
           { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
-        ]
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+        ],
       },
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
           { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
-        ]
-      }
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } },
+        ],
+      },
     };
-
     const template = templates[config.template] || templates['sign-in'];
+
     const mappedData = {};
     Object.entries(formData).forEach(([fieldId, value]) => {
       const customField = config.placeholders.find(p => p.id === fieldId);
@@ -954,20 +797,26 @@ app.post('/form/:id/submit', rateLimiters.formSubmit, async (req, res) => {
       mappedData[sanitizeForJs(displayName)] = sanitizeForJs(value);
     });
 
-    await Submission.create({
+    const submission = new Submission({
       userId,
       formId,
-      data: mappedData
+      timestamp: new Date().toISOString(),
+      data: mappedData,
     });
 
+    console.log(`Attempting to save submission for ${formId} by user ${userId}:`, submission);
+
+    await submission.save();
+    console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
-    console.error('Error saving submission:', error);
-    res.status(500).json({ error: 'Failed to save submission' });
+    console.error('Error saving submission:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to save submission', details: error.message });
   }
 });
 
-app.delete('/form/:id/submission/:index', rateLimiters.deleteSubmission, authenticateToken, async (req, res) => {
+// Delete a submission
+app.delete('/form/:id/submission/:index', authenticateToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
   const userId = req.user.userId;
@@ -975,49 +824,56 @@ app.delete('/form/:id/submission/:index', rateLimiters.deleteSubmission, authent
   try {
     const config = await FormConfig.findOne({ formId, userId });
     if (!config) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
-
     const adminSettings = await AdminSettings.findOne();
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
-    const submissions = await Submission.find({ userId, formId }).sort({ timestamp: 1 });
-    if (index < 0 || index >= submissions.length) {
+    const userFormSubmissions = await Submission.find({ userId, formId }).sort({ timestamp: 1 });
+    if (index < 0 || index >= userFormSubmissions.length) {
+      console.error(`Invalid submission index: ${index} for form ${formId} by user ${userId}`);
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    await Submission.deleteOne({ _id: submissions[index]._id });
+    const submissionToDelete = userFormSubmissions[index];
+    await Submission.deleteOne({ _id: submissionToDelete._id });
+    console.log(`Deleted submission at index ${index} for form ${formId} by user ${userId}`);
+
     res.status(200).json({ message: 'Submission deleted successfully' });
   } catch (error) {
-    console.error('Error deleting submission:', error);
-    res.status(500).json({ error: 'Failed to delete submission' });
+    console.error('Error deleting submission:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete submission', details: error.message });
   }
 });
 
-app.delete('/form/:id', rateLimiters.deleteForm, authenticateToken, async (req, res) => {
+// Delete a form and its submissions
+app.delete('/form/:id', authenticateToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
 
   try {
     const config = await FormConfig.findOne({ formId, userId });
     if (!config) {
+      console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
     await FormConfig.deleteOne({ formId });
     await Submission.deleteMany({ formId, userId });
-    await FormCreation.deleteMany({ formId, userId });
+    console.log(`Deleted form ${formId} and its submissions for user ${userId}`);
 
     res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
   } catch (error) {
-    console.error('Error deleting form:', error);
-    res.status(500).json({ error: 'Failed to delete form' });
+    console.error('Error deleting form:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete form', details: error.message });
   }
 });
 
-app.get('/submissions', rateLimiters.getSubmissions, authenticateToken, async (req, res) => {
+// Get user submissions
+app.get('/submissions', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
@@ -1027,42 +883,45 @@ app.get('/submissions', rateLimiters.getSubmissions, authenticateToken, async (r
         name: 'Sign In Form',
         fields: [
           { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
-        ]
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } },
+        ],
       },
       'contact': {
         name: 'Contact Form',
         fields: [
           { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
-        ]
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+        ],
       },
       'payment-checkout': {
         name: 'Payment Checkout Form',
         fields: [
           { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
           { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
-        ]
-      }
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } },
+        ],
+      },
     };
 
+    console.log(`Retrieved ${submissions.length} submissions for user ${userId}`);
     res.json({
       submissions,
       templates,
-      userId
+      userId,
     });
   } catch (error) {
-    console.error('Error fetching submissions:', error);
-    res.status(500).json({ error: 'Failed to fetch submissions' });
+    console.error('Error fetching submissions:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch submissions', details: error.message });
   }
 });
 
-app.get('/form/:id', rateLimiters.getForm, async (req, res) => {
+// Render form page
+app.get('/form/:id', async (req, res) => {
   const formId = req.params.id;
   const config = await FormConfig.findOne({ formId });
 
   if (!config) {
+    console.error(`Form not found for ID: ${formId}`);
     return res.status(404).send('Form not found');
   }
 
@@ -1076,36 +935,36 @@ app.get('/form/:id', rateLimiters.getForm, async (req, res) => {
       name: 'Sign In Form',
       fields: [
         { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-        { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } }
+        { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } },
       ],
       buttonText: 'Sign In',
       buttonAction: 'url',
       buttonUrl: '',
-      buttonMessage: ''
+      buttonMessage: '',
     },
     'contact': {
       name: 'Contact Form',
       fields: [
         { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } }
+        { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
       ],
       buttonText: 'Submit',
       buttonAction: 'message',
       buttonUrl: '',
-      buttonMessage: 'Thank you for contacting us!'
+      buttonMessage: 'Thank you for contacting us!',
     },
     'payment-checkout': {
       name: 'Payment Checkout Form',
       fields: [
         { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
         { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-        { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } }
+        { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } },
       ],
       buttonText: 'Pay Now',
       buttonAction: 'message',
       buttonUrl: '',
-      buttonMessage: 'Payment processed successfully!'
-    }
+      buttonMessage: 'Payment processed successfully!',
+    },
   };
 
   const template = templates[config.template] || templates['sign-in'];
@@ -1113,7 +972,7 @@ app.get('/form/:id', rateLimiters.getForm, async (req, res) => {
     const customField = config.placeholders.find(p => p.id === field.id);
     return {
       ...field,
-      placeholder: customField ? customField.placeholder : field.placeholder
+      placeholder: customField ? customField.placeholder : field.placeholder,
     };
   });
 
@@ -1123,7 +982,7 @@ app.get('/form/:id', rateLimiters.getForm, async (req, res) => {
         id: p.id,
         placeholder: p.placeholder || template.fields.find(f => f.id === p.id)?.placeholder || 'Enter value',
         type: 'text',
-        validation: { required: false }
+        validation: { required: false },
       });
     }
   });
@@ -1158,71 +1017,83 @@ app.get('/form/:id', rateLimiters.getForm, async (req, res) => {
       templates: JSON.stringify(templates, (key, value) => {
         if (key === 'regex' && value) return value.toString().slice(1, -1);
         return value;
-      })
+      }),
     });
   } catch (error) {
-    console.error('Error rendering form:', error);
+    console.error('Error rendering form:', error.message, error.stack);
     res.status(500).send('Error rendering form');
   }
 });
 
-app.get('/api/form/:id', rateLimiters.getForm, authenticateToken, async (req, res) => {
-  try {
-    const formId = req.params.id;
-    const userId = req.user.userId;
+// Fetch form configuration for editing
+app.get('/api/form/:id', authenticateToken, async (req, res) => {
+  const formId = req.params.id;
+  const userId = req.user.userId;
 
+  try {
     const config = await FormConfig.findOne({ formId, userId });
     if (!config) {
-      return res.status(404).json({ error: 'Form not found or access denied' });
+      console.error(`Form not found for ID: ${formId}`);
+      return res.status(404).json({ error: 'Form not found' });
     }
-
     const adminSettings = await AdminSettings.findOne();
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
 
+    console.log(`Retrieved form config for ${formId} for user ${userId}`);
     res.status(200).json({
       ...config.toObject(),
       formId,
-      message: 'Form configuration retrieved successfully'
+      message: 'Form configuration retrieved successfully',
     });
   } catch (error) {
-    console.error('Error fetching form config:', error);
-    res.status(500).json({ error: 'Failed to fetch form configuration' });
+    console.error('Error fetching form config for /api/form/:id:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch form configuration', details: error.message });
   }
 });
 
+// Subscription Routes
 const allowedPlans = ['premium-weekly', 'premium-monthly'];
 function isValidPlan(planId) {
   return allowedPlans.includes(planId);
 }
 
-app.post('/api/subscription/initiate-payment', rateLimiters.initiatePayment, authenticateToken, async (req, res) => {
+// Initiate payment
+app.post('/api/subscription/initiate-payment', authenticateToken, async (req, res) => {
   const { planId, email, price } = req.body;
   const userId = req.user.userId;
 
+  console.log(`Received payment initiation request: userId=${userId}, planId=${planId}, email=${email}, price=${price}`);
+
   try {
     if (!planId || !email || !price) {
+      console.error('Validation failed: Missing required fields');
       return res.status(400).json({ error: 'Missing required fields: planId, email, and price are required' });
     }
 
     if (!isValidPlan(planId)) {
+      console.error(`Validation failed: Invalid planId: ${planId}`);
       return res.status(400).json({ error: `Invalid planId. Must be one of: ${allowedPlans.join(', ')}` });
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\\s@]+$/.test(email)) {
+      console.error('Validation failed: Invalid email format');
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
     if (!Number.isInteger(price) || price <= 0) {
+      console.error('Validation failed: Invalid price');
       return res.status(400).json({ error: 'Price must be a positive integer' });
     }
 
     const existingSubscription = await hasActiveSubscription(userId);
     if (existingSubscription && existingSubscription.billingPeriod === planId.split('-')[1]) {
+      console.warn(`User ${userId} already has an active ${planId.split('-')[1]} subscription`);
       return res.status(400).json({ error: `You already have an active ${planId.split('-')[1]} subscription` });
     }
 
+    console.log('Making Paystack API request to /transaction/initialize');
     const response = await axios.post(
       'https://api.paystack.co/transaction/initialize',
       {
@@ -1231,91 +1102,104 @@ app.post('/api/subscription/initiate-payment', rateLimiters.initiatePayment, aut
         metadata: {
           userId,
           planId,
-          billingPeriod: planId === 'premium-weekly' ? 'weekly' : 'monthly'
-        }
+          billingPeriod: planId === 'premium-weekly' ? 'weekly' : 'monthly',
+        },
       },
       {
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
       }
     );
 
+    console.log('Paystack response:', response.data);
+
     if (!response.data.status || !response.data.data.authorization_url || !response.data.data.reference) {
+      console.error('Paystack response missing required fields:', response.data);
       return res.status(500).json({ error: 'Failed to initialize payment with Paystack' });
     }
 
     const { authorization_url: authorizationUrl, reference } = response.data.data;
 
-    await Subscription.create({
+    const subscription = new Subscription({
       userId,
       email,
       planId,
       billingPeriod: planId === 'premium-weekly' ? 'weekly' : 'monthly',
       reference,
-      status: 'pending'
+      status: 'pending',
+      createdAt: new Date().toISOString(),
     });
+
+    console.log('Saving subscription:', subscription);
+    await subscription.save();
 
     res.json({
       message: 'Payment initiated successfully',
       authorizationUrl,
-      reference
+      reference,
     });
   } catch (error) {
-    console.error('Error in /api/subscription/initiate-payment:', error);
+    console.error('Error in /api/subscription/initiate-payment:', {
+      message: error.message,
+      stack: error.stack,
+      axiosError: error.response ? {
+        status: error.response.status,
+        data: error.response.data,
+      } : null,
+    });
     res.status(500).json({ error: 'Failed to initiate payment' });
   }
 });
 
-app.post('/api/subscription/webhook', rateLimiters.webhook, async (req, res) => {
+// Webhook for Paystack
+app.post('/api/subscription/webhook', async (req, res) => {
+  console.log('Webhook received:', req.body);
+
   try {
     const event = req.body;
     if (event.event === 'charge.success') {
       const { reference, metadata, status } = event.data;
       const { userId, planId, billingPeriod } = metadata;
 
+      console.log(`Processing webhook: reference=${reference}, userId=${userId}, planId=${planId}, status=${status}`);
+
       const subscription = await Subscription.findOne({ reference });
       if (!subscription) {
+        console.error(`Webhook error: Subscription not found for reference ${reference}`);
         return res.status(404).json({ error: 'Subscription not found' });
       }
 
       await Subscription.updateMany(
         { userId, status: 'active', reference: { $ne: reference } },
-        { status: 'inactive', endDate: new Date() }
+        { status: 'inactive', endDate: new Date().toISOString() }
       );
 
-      await Subscription.updateOne({ reference }, {
-        status: 'active',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + (billingPeriod === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000))
-      });
+      subscription.status = 'active';
+      subscription.startDate = new Date().toISOString();
+      subscription.endDate = new Date(
+        Date.now() + (billingPeriod === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
+      ).toISOString();
+
+      console.log('Updating subscription:', subscription);
+      await subscription.save();
 
       res.status(200).json({ message: 'Webhook processed successfully' });
     } else {
+      console.log('Webhook ignored: Not a charge.success event');
       res.status(200).json({ message: 'Event ignored' });
     }
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('Webhook error:', error.message);
     res.status(500).json({ error: 'Failed to process webhook' });
   }
 });
 
 // Start the server
-const startServer = async () => {
-  try {
-    await connectDB(); // Connect to MongoDB
-    await initializeAdminSettings(); // Initialize admin settings after connection
-    app.listen(port, () => {
-      console.log(`Server is running on port ${port}`);
-    }).on('error', (error) => {
-      console.error('Server startup error:', error);
-      process.exit(1);
-    });
-  } catch (err) {
-    console.error('Failed to start server:', err);
-    process.exit(1);
-  }
-};
-
-startServer();
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+}).on('error', (error) => {
+  console.error('Server startup error:', error.message, error.stack);
+  process.exit(1);
+});
