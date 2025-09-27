@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const path = require('path');
+const path = require('path'); // Added to fix path issue
 require('dotenv').config();
 
 const app = express();
@@ -17,12 +17,15 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
+console.log('Attempting to connect to MongoDB with URI:', MONGODB_URI.replace(/:([^:@]+)@/, ':****@'));
 
 mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 30000, // 30 seconds timeout
+  socketTimeoutMS: 45000, // Socket timeout
+  connectTimeoutMS: 30000, // Connection timeout
+  retryWrites: true, // Retry writes on failure
 }).then(() => {
-  console.log('Connected to MongoDB');
+  console.log('Successfully connected to MongoDB');
 }).catch(err => {
   console.error('MongoDB connection error:', err.message, err.stack);
   process.exit(1);
@@ -101,28 +104,39 @@ const Subscription = mongoose.model('Subscription', subscriptionSchema);
 
 // Initialize default admin settings if none exist
 async function initializeAdminSettings() {
-  const settings = await AdminSettings.findOne();
-  if (!settings) {
-    await AdminSettings.create({
-      linkLifespan: 604800000, // 7 days in milliseconds
-      linkLifespanValue: 7,
-      linkLifespanUnit: 'days',
-      maxFormsPerUserPerDay: 10,
-      restrictionsEnabled: true,
-    });
-    console.log('Created default admin settings');
+  try {
+    const settings = await AdminSettings.findOne();
+    if (!settings) {
+      await AdminSettings.create({
+        linkLifespan: 604800000, // 7 days in milliseconds
+        linkLifespanValue: 7,
+        linkLifespanUnit: 'days',
+        maxFormsPerUserPerDay: 10,
+        restrictionsEnabled: true,
+      });
+      console.log('Created default admin settings');
+    }
+  } catch (err) {
+    console.error('Error initializing admin settings:', err.message, err.stack);
+    throw err;
   }
 }
 
-// Initialize MongoDB
-(async () => {
+// Initialize MongoDB and admin settings
+mongoose.connection.once('open', async () => {
+  console.log('MongoDB connection is open');
   try {
     await initializeAdminSettings();
   } catch (err) {
     console.error('Initialization failed:', err.message, err.stack);
     process.exit(1);
   }
-})();
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err.message, err.stack);
+  process.exit(1);
+});
 
 // Middleware
 app.use(cors({
