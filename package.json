@@ -1,33 +1,24 @@
 {
-  "name": "form-app",
+  "name": "plexzora",
   "version": "1.0.0",
-  "description": "A Node.js server for managing forms with MongoDB and rate limiting",
+  "description": "A form management application with MongoDB, Express, and Telegram integration",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "migrate": "node migrate.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
     "express": "^4.21.0",
-    "express-rate-limit": "^7.4.0",
-    "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.7.0",
-    "mongo-sanitize": "^1.1.0",
-    "rate-limit-mongo": "^2.3.2"
+    "telegraf": "^4.16.3"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.7"
-  },
-  "author": "",
-  "license": "ISC",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=14.0.0"
   }
 }
