@@ -6,7 +6,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const path = require('path'); // Added to fix path issue
+const path = require('path');
+const { Telegraf } = require('telegraf');
 require('dotenv').config();
 
 const app = express();
@@ -14,16 +15,22 @@ const port = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+if (!TELEGRAM_BOT_TOKEN) {
+  console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
+  process.exit(1);
+}
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
 console.log('Attempting to connect to MongoDB with URI:', MONGODB_URI.replace(/:([^:@]+)@/, ':****@'));
 
 mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 30000, // 30 seconds timeout
-  socketTimeoutMS: 45000, // Socket timeout
-  connectTimeoutMS: 30000, // Connection timeout
-  retryWrites: true, // Retry writes on failure
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000,
+  connectTimeoutMS: 30000,
+  retryWrites: true,
 }).then(() => {
   console.log('Successfully connected to MongoDB');
 }).catch(err => {
@@ -31,7 +38,7 @@ mongoose.connect(MONGODB_URI, {
   process.exit(1);
 });
 
-// Mongoose Schemas with Indexes
+// Mongoose Schemas
 const submissionSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   formId: { type: String, required: true, index: true },
@@ -94,6 +101,12 @@ const subscriptionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now, index: true },
 }, { timestamps: true });
 
+const telegramSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true, index: true },
+  chatId: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now, index: true },
+}, { timestamps: true });
+
 // Create models
 const Submission = mongoose.model('Submission', submissionSchema);
 const FormConfig = mongoose.model('FormConfig', formConfigSchema);
@@ -101,14 +114,15 @@ const FormCreation = mongoose.model('FormCreation', formCreationSchema);
 const User = mongoose.model('User', userSchema);
 const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 const Subscription = mongoose.model('Subscription', subscriptionSchema);
+const Telegram = mongoose.model('Telegram', telegramSchema);
 
-// Initialize default admin settings if none exist
+// Initialize default admin settings
 async function initializeAdminSettings() {
   try {
     const settings = await AdminSettings.findOne();
     if (!settings) {
       await AdminSettings.create({
-        linkLifespan: 604800000, // 7 days in milliseconds
+        linkLifespan: 604800000,
         linkLifespanValue: 7,
         linkLifespanUnit: 'days',
         maxFormsPerUserPerDay: 10,
@@ -122,7 +136,7 @@ async function initializeAdminSettings() {
   }
 }
 
-// Initialize MongoDB and admin settings
+// MongoDB connection handling
 mongoose.connection.once('open', async () => {
   console.log('MongoDB connection is open');
   try {
@@ -138,6 +152,50 @@ mongoose.connection.on('error', (err) => {
   process.exit(1);
 });
 
+// Initialize Telegram bot
+const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+
+bot.start(async (ctx) => {
+  const userId = ctx.startPayload;
+  const chatId = ctx.chat.id.toString();
+
+  if (!userId) {
+    return ctx.reply('Error: No user ID provided. Please use the link from your dashboard.');
+  }
+
+  try {
+    await Telegram.updateOne(
+      { userId },
+      { userId, chatId, createdAt: new Date() },
+      { upsert: true }
+    );
+    console.log(`Linked Telegram chatId ${chatId} to userId ${userId}`);
+    ctx.reply('Your Telegram account is now connected! You will receive form submission notifications here.');
+  } catch (error) {
+    console.error('Error saving Telegram chatId:', error.message);
+    ctx.reply('Error connecting your Telegram account. Please try again later.');
+  }
+});
+
+bot.launch().then(() => {
+  console.log('Telegram bot started');
+}).catch((error) => {
+  console.error('Telegram bot failed to start:', error.message);
+  process.exit(1);
+});
+
+process.on('SIGINT', () => {
+  bot.stop('SIGINT');
+  console.log('Telegram bot stopped');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  bot.stop('SIGTERM');
+  console.log('Telegram bot stopped');
+  process.exit(0);
+});
+
 // Middleware
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://your-frontend-domain.com'],
@@ -150,7 +208,6 @@ app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Handle preflight requests
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -158,7 +215,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Utility to normalize URLs
+// Utility functions
 function normalizeUrl(url) {
   if (!url) return null;
   url = url.trim();
@@ -167,7 +224,6 @@ function normalizeUrl(url) {
   return null;
 }
 
-// Utility to generate a short, unique code
 async function generateShortCode(length = 6) {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let code = '';
@@ -181,7 +237,6 @@ async function generateShortCode(length = 6) {
   return code;
 }
 
-// Utility to sanitize strings
 function sanitizeForJs(str) {
   if (!str) return '';
   return str
@@ -194,7 +249,6 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-// Utility to check if form is expired
 async function isFormExpired(formId) {
   const config = await FormConfig.findOne({ formId });
   if (!config || !config.createdAt) {
@@ -229,7 +283,6 @@ async function isFormExpired(formId) {
   return isExpired;
 }
 
-// Utility to count user's forms created today
 async function countUserFormsToday(userId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -245,12 +298,10 @@ async function countUserFormsToday(userId) {
   return count;
 }
 
-// Utility to get total user count
 async function getUserCount() {
   return await User.countDocuments();
 }
 
-// Utility to get count of active subscribers
 async function getSubscriberCount() {
   const activeSubscribers = await Subscription.countDocuments({
     status: 'active',
@@ -260,24 +311,22 @@ async function getSubscriberCount() {
   return activeSubscribers;
 }
 
-// Utility to check if user has an active subscription
 async function hasActiveSubscription(userId) {
   try {
     const activeSubscription = await Subscription.findOne({
       userId,
       status: 'active',
       endDate: { $gt: new Date() },
-    }).sort({ createdAt: -1 }); // Get the latest active subscription
+    }).sort({ createdAt: -1 });
     const hasActive = !!activeSubscription;
     console.log(`User ${userId} has active subscription: ${hasActive}`, activeSubscription || {});
-    return activeSubscription; // Return the subscription object or null
+    return activeSubscription;
   } catch (error) {
     console.error('Error checking subscription status:', error.message);
     return null;
   }
 }
 
-// JWT verification middleware
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -297,7 +346,6 @@ function authenticateToken(req, res, next) {
   }
 }
 
-// Admin password verification middleware
 function verifyAdminPassword(req, res, next) {
   const { adminPassword } = req.body;
   if (!adminPassword || !bcrypt.compareSync(adminPassword, ADMIN_PASSWORD_HASH)) {
@@ -306,7 +354,7 @@ function verifyAdminPassword(req, res, next) {
   next();
 }
 
-// Auth Route: Get current user info
+// Routes
 app.get('/user', authenticateToken, async (req, res) => {
   try {
     const user = await User.findOne({ id: req.user.userId });
@@ -325,7 +373,6 @@ app.get('/user', authenticateToken, async (req, res) => {
   }
 });
 
-// Auth Route: Signup
 app.post('/signup', async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -359,7 +406,6 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-// Auth Route: Login
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -385,7 +431,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Auth Route: Forgot Password
 app.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -405,7 +450,6 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
-// Auth Route: Reset Password
 app.post('/reset-password', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -432,7 +476,6 @@ app.post('/reset-password', async (req, res) => {
   }
 });
 
-// Admin Route: Render admin settings page
 app.get('/admin', async (req, res) => {
   try {
     const adminSettings = await AdminSettings.findOne();
@@ -460,7 +503,6 @@ app.get('/admin', async (req, res) => {
   }
 });
 
-// Admin Route: Set global settings
 app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
   try {
     const { linkLifespanValue, linkLifespanUnit, maxFormsPerUserPerDay, restrictionsEnabled } = req.body;
@@ -538,7 +580,21 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
   }
 });
 
-// Protected Routes - WITH USER ISOLATION
+app.get('/api/telegram/connect', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const telegramLink = `https://t.me/${bot.botInfo.username}?start=${userId}`;
+    console.log(`Generated Telegram link for user ${userId}: ${telegramLink}`);
+    res.json({
+      message: 'Telegram connect link generated successfully',
+      telegramLink,
+    });
+  } catch (error) {
+    console.error('Error generating Telegram link:', error.message);
+    res.status(500).json({ error: 'Failed to generate Telegram link', details: error.message });
+  }
+});
+
 app.get('/get', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -624,7 +680,6 @@ app.get('/get', authenticateToken, async (req, res) => {
   }
 });
 
-// Create new form
 app.post('/create', authenticateToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
@@ -690,7 +745,6 @@ app.post('/create', authenticateToken, async (req, res) => {
   }
 });
 
-// Update existing form
 app.put('/api/form/:id', authenticateToken, async (req, res) => {
   try {
     console.log('Received /api/form/:id PUT request:', req.body);
@@ -761,7 +815,6 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Submit form data
 app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
 
@@ -823,6 +876,22 @@ app.post('/form/:id/submit', async (req, res) => {
 
     await submission.save();
     console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
+
+    try {
+      const telegram = await Telegram.findOne({ userId });
+      if (telegram && telegram.chatId) {
+        const notificationMessage = `New submission received for form ${formId}:\n${Object.entries(mappedData)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join('\n')}`;
+        await bot.telegram.sendMessage(telegram.chatId, notificationMessage);
+        console.log(`Sent Telegram notification to chatId ${telegram.chatId} for user ${userId}`);
+      } else {
+        console.log(`No Telegram chatId found for user ${userId}, skipping notification`);
+      }
+    } catch (telegramError) {
+      console.error('Error sending Telegram notification:', telegramError.message);
+    }
+
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
     console.error('Error saving submission:', error.message, error.stack);
@@ -830,7 +899,6 @@ app.post('/form/:id/submit', async (req, res) => {
   }
 });
 
-// Delete a submission
 app.delete('/form/:id/submission/:index', authenticateToken, async (req, res) => {
   const formId = req.params.id;
   const index = parseInt(req.params.index, 10);
@@ -864,7 +932,6 @@ app.delete('/form/:id/submission/:index', authenticateToken, async (req, res) =>
   }
 });
 
-// Delete a form and its submissions
 app.delete('/form/:id', authenticateToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
@@ -887,7 +954,6 @@ app.delete('/form/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Get user submissions
 app.get('/submissions', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -930,7 +996,6 @@ app.get('/submissions', authenticateToken, async (req, res) => {
   }
 });
 
-// Render form page
 app.get('/form/:id', async (req, res) => {
   const formId = req.params.id;
   const config = await FormConfig.findOne({ formId });
@@ -980,67 +1045,66 @@ app.get('/form/:id', async (req, res) => {
       buttonUrl: '',
       buttonMessage: 'Payment processed successfully!',
     },
-  };
-
-  const template = templates[config.template] || templates['sign-in'];
-  const fields = template.fields.map(field => {
-    const customField = config.placeholders.find(p => p.id === field.id);
-    return {
-      ...field,
-      placeholder: customField ? customField.placeholder : field.placeholder,
     };
-  });
 
-  config.placeholders.forEach(p => {
-    if (!fields.some(f => f.id === p.id)) {
-      fields.push({
-        id: p.id,
-        placeholder: p.placeholder || template.fields.find(f => f.id === p.id)?.placeholder || 'Enter value',
-        type: 'text',
-        validation: { required: false },
-      });
-    }
-  });
-
-  const inputCount = fields.length;
-  const minHeight = `${300 + (inputCount - template.fields.length) * 40}px`;
-
-  const headerHtml = config.headerText.split('').map((char, i) => {
-    if (char === ' ') return '<span class="space"> </span>';
-    const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
-    return `<span style="color: ${sanitizeForJs(color)}">${sanitizeForJs(char)}</span>`;
-  }).join('');
-
-  try {
-    res.render('form', {
-      templateName: sanitizeForJs(template.name),
-      headerHtml,
-      subheaderText: sanitizeForJs(config.subheaderText),
-      subheaderColor: sanitizeForJs(config.subheaderColor),
-      fields,
-      borderShadow: sanitizeForJs(config.borderShadow),
-      buttonColor: sanitizeForJs(config.buttonColor),
-      buttonTextColor: sanitizeForJs(config.buttonTextColor),
-      buttonText: sanitizeForJs(config.buttonText),
-      buttonAction: sanitizeForJs(config.buttonAction),
-      buttonUrl: sanitizeForJs(config.buttonUrl || ''),
-      buttonMessage: sanitizeForJs(config.buttonMessage || ''),
-      theme: config.theme,
-      minHeight,
-      template: config.template,
-      formId,
-      templates: JSON.stringify(templates, (key, value) => {
-        if (key === 'regex' && value) return value.toString().slice(1, -1);
-        return value;
-      }),
+    const template = templates[config.template] || templates['sign-in'];
+    const fields = template.fields.map(field => {
+      const customField = config.placeholders.find(p => p.id === field.id);
+      return {
+        ...field,
+        placeholder: customField ? customField.placeholder : field.placeholder,
+      };
     });
-  } catch (error) {
-    console.error('Error rendering form:', error.message, error.stack);
-    res.status(500).send('Error rendering form');
-  }
+
+    config.placeholders.forEach(p => {
+      if (!fields.some(f => f.id === p.id)) {
+        fields.push({
+          id: p.id,
+          placeholder: p.placeholder || template.fields.find(f => f.id === p.id)?.placeholder || 'Enter value',
+          type: 'text',
+          validation: { required: false },
+        });
+      }
+    });
+
+    const inputCount = fields.length;
+    const minHeight = `${300 + (inputCount - template.fields.length) * 40}px`;
+
+    const headerHtml = config.headerText.split('').map((char, i) => {
+      if (char === ' ') return '<span class="space"> </span>';
+      const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
+      return `<span style="color: ${sanitizeForJs(color)}">${sanitizeForJs(char)}</span>`;
+    }).join('');
+
+    try {
+      res.render('form', {
+        templateName: sanitizeForJs(template.name),
+        headerHtml,
+        subheaderText: sanitizeForJs(config.subheaderText),
+        subheaderColor: sanitizeForJs(config.subheaderColor),
+        fields,
+        borderShadow: sanitizeForJs(config.borderShadow),
+        buttonColor: sanitizeForJs(config.buttonColor),
+        buttonTextColor: sanitizeForJs(config.buttonTextColor),
+        buttonText: sanitizeForJs(config.buttonText),
+        buttonAction: sanitizeForJs(config.buttonAction),
+        buttonUrl: sanitizeForJs(config.buttonUrl || ''),
+        buttonMessage: sanitizeForJs(config.buttonMessage || ''),
+        theme: config.theme,
+        minHeight,
+        template: config.template,
+        formId,
+        templates: JSON.stringify(templates, (key, value) => {
+          if (key === 'regex' && value) return value.toString().slice(1, -1);
+          return value;
+        }),
+      });
+    } catch (error) {
+      console.error('Error rendering form:', error.message, error.stack);
+      res.status(500).send('Error rendering form');
+    }
 });
 
-// Fetch form configuration for editing
 app.get('/api/form/:id', authenticateToken, async (req, res) => {
   const formId = req.params.id;
   const userId = req.user.userId;
@@ -1068,13 +1132,11 @@ app.get('/api/form/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Subscription Routes
 const allowedPlans = ['premium-weekly', 'premium-monthly'];
 function isValidPlan(planId) {
   return allowedPlans.includes(planId);
 }
 
-// Initiate payment
 app.post('/api/subscription/initiate-payment', authenticateToken, async (req, res) => {
   const { planId, email, price } = req.body;
   const userId = req.user.userId;
@@ -1092,7 +1154,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
       return res.status(400).json({ error: `Invalid planId. Must be one of: ${allowedPlans.join(', ')}` });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       console.error('Validation failed: Invalid email format');
       return res.status(400).json({ error: 'Invalid email format' });
     }
@@ -1168,7 +1230,6 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
   }
 });
 
-// Webhook for Paystack
 app.post('/api/subscription/webhook', async (req, res) => {
   console.log('Webhook received:', req.body);
 
