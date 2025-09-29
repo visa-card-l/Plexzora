@@ -70,18 +70,19 @@
       display: inline-block;
     }
     .form-fields {
-      width: 100%; /* Full width independent of container */
-      max-width: 400px; /* Match button width or set desired max width */
-      margin: 0 auto; /* Center the fields */
+      width: 100%;
+      max-width: 400px; /* Match button's max-width */
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px; /* Consistent spacing between fields */
     }
     .input-container {
-      position: relative;
-      width: 100%;
-      overflow: hidden;
-      margin-bottom: 8px; /* Space between fields */
+      width: 100%; /* Full width of .form-fields */
+      margin-bottom: 0; /* Controlled by .form-fields gap */
     }
     .login-container input {
-      width: 100%; /* Full width of .form-fields */
+      width: 100%; /* Ensure full width of .form-fields */
       padding: 14px 40px 14px 14px;
       margin: 0;
       border-radius: 8px;
@@ -89,9 +90,10 @@
       box-sizing: border-box;
       transition: all 0.2s ease;
       border: none;
-      box-shadow: <%= borderShadow %>;
+      box-shadow: <%= borderShadow %>; /* Border effect via shadow */
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
+      display: block; /* Ensure proper block-level rendering */
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
