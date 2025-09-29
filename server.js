@@ -164,6 +164,15 @@ bot.start(async (ctx) => {
   }
 
   try {
+    const subscription = await Subscription.findOne({
+      userId,
+      status: 'active',
+      endDate: { $gt: new Date() },
+    });
+    if (!subscription) {
+      return ctx.reply('Error: You need an active subscription to connect Telegram for notifications.');
+    }
+
     await Telegram.updateOne(
       { userId },
       { userId, chatId, createdAt: new Date() },
@@ -583,6 +592,16 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
 app.get('/api/telegram/connect', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
+    const subscription = await Subscription.findOne({
+      userId,
+      status: 'active',
+      endDate: { $gt: new Date() },
+    });
+
+    if (!subscription) {
+      return res.status(403).json({ error: 'You need an active subscription to connect Telegram for notifications.' });
+    }
+
     const telegramLink = `https://t.me/${bot.botInfo.username}?start=${userId}`;
     console.log(`Generated Telegram link for user ${userId}: ${telegramLink}`);
     res.json({
@@ -878,15 +897,24 @@ app.post('/form/:id/submit', async (req, res) => {
     console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
 
     try {
-      const telegram = await Telegram.findOne({ userId });
-      if (telegram && telegram.chatId) {
-        const notificationMessage = `New submission received for form ${formId}:\n${Object.entries(mappedData)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join('\n')}`;
-        await bot.telegram.sendMessage(telegram.chatId, notificationMessage);
-        console.log(`Sent Telegram notification to chatId ${telegram.chatId} for user ${userId}`);
+      const subscription = await Subscription.findOne({
+        userId,
+        status: 'active',
+        endDate: { $gt: new Date() },
+      });
+      if (subscription) {
+        const telegram = await Telegram.findOne({ userId });
+        if (telegram && telegram.chatId) {
+          const notificationMessage = `New submission received for form ${formId}:\n${Object.entries(mappedData)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n')}`;
+          await bot.telegram.sendMessage(telegram.chatId, notificationMessage);
+          console.log(`Sent Telegram notification to chatId ${telegram.chatId} for user ${userId}`);
+        } else {
+          console.log(`No Telegram chatId found for user ${userId}, skipping notification`);
+        }
       } else {
-        console.log(`No Telegram chatId found for user ${userId}, skipping notification`);
+        console.log(`User ${userId} is not subscribed, skipping Telegram notification`);
       }
     } catch (telegramError) {
       console.error('Error sending Telegram notification:', telegramError.message);
