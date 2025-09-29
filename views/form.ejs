@@ -71,29 +71,29 @@
     }
     .form-fields {
       width: 100%;
-      max-width: 400px; /* Match button's max-width */
+      max-width: 400px; /* Consistent max-width */
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 8px; /* Consistent spacing between fields */
+      gap: 16px; /* Increased gap for better spacing */
     }
     .input-container {
-      width: 100%; /* Full width of .form-fields */
-      margin-bottom: 0; /* Controlled by .form-fields gap */
+      width: 100%;
+      position: relative; /* Make this a positioning context for toggle-password */
     }
     .login-container input {
-      width: 100%; /* Ensure full width of .form-fields */
-      padding: 14px 40px 14px 14px;
+      width: 100%;
+      padding: 14px 40px 14px 14px; /* Space for toggle icon */
       margin: 0;
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
       border: none;
-      box-shadow: <%= borderShadow %>; /* Border effect via shadow */
+      box-shadow: <%= borderShadow %>;
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
-      display: block; /* Ensure proper block-level rendering */
+      display: block;
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
@@ -108,10 +108,10 @@
       background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
     .login-container button {
-      width: 100%; /* Full width of .form-fields */
-      max-width: 400px; /* Set to match desired button width */
+      width: 100%;
+      max-width: 400px; /* Match form-fields max-width */
       padding: 16px;
-      margin: 20px 0 0;
+      margin: 16px 0 0; /* Adjusted for better spacing */
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
@@ -162,13 +162,14 @@
     }
     .toggle-password {
       position: absolute;
-      right: 10px;
+      right: 14px; /* Adjusted for alignment */
       top: 50%;
       transform: translateY(-50%);
       cursor: pointer;
       color: <%= theme === 'dark' ? '#b0b8cc' : '#555555' %>;
       font-size: 1rem;
       transition: color 0.2s ease;
+      z-index: 1; /* Ensure icon is above input */
     }
     .toggle-password:hover {
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
@@ -243,11 +244,11 @@
       }
       .login-container {
         width: 100%;
-        max-width: 300px;
+        max-width: 320px; /* Adjusted for better usability */
         padding: 20px;
       }
       .form-fields {
-        max-width: 100%; /* Adjust for smaller screens */
+        max-width: 100%;
       }
       .login-container h2 {
         font-size: 1.6rem;
@@ -261,7 +262,7 @@
       }
       .login-container button {
         padding: 14px;
-        margin: 16px 0 0;
+        margin: 12px 0 0;
       }
       .popup {
         width: 80%;
@@ -274,7 +275,7 @@
         max-width: 280px;
       }
       .form-fields {
-        max-width: 100%; /* Adjust for smaller screens */
+        max-width: 100%;
       }
       .login-container h2 {
         font-size: 1.4rem;
@@ -283,12 +284,12 @@
         font-size: 0.8rem;
       }
       .login-container input, .login-container button {
-        font-size: 0.85rem;
         padding: 10px 40px 10px 10px;
+        font-size: 0.85rem;
       }
       .login-container button {
         padding: 12px;
-        margin: 12px 0 0;
+        margin: 10px 0 0;
       }
       .popup {
         max-width: 260px;
@@ -484,7 +485,6 @@
       }
     }
 
-    // Password toggle functionality
     const togglePasswordButtons = document.querySelectorAll('.toggle-password');
     togglePasswordButtons.forEach(button => {
       button.addEventListener('click', () => {
@@ -507,15 +507,12 @@
         const buttonText = loginButton.querySelector('.button-text');
         const spinner = loginButton.querySelector('.spinner');
 
-        // Check if form is filled and valid
         if (!checkFormFilled()) return;
 
-        // Show spinner, hide button text, and disable button
         loginButton.classList.add('loading');
         loginButton.disabled = true;
 
         try {
-          // Submit form data
           const submitted = await submitFormData();
           if (!submitted) return;
 
@@ -542,7 +539,6 @@
           console.error('Error during submission:', error);
           showMessagePopup('An error occurred. Please try again.');
         } finally {
-          // Hide spinner, show button text, and re-enable button
           loginButton.classList.remove('loading');
           loginButton.disabled = false;
         }
