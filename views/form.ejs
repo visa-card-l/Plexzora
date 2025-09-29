@@ -7,6 +7,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
+    * {
+      box-sizing: border-box; /* Ensure consistent sizing */
+    }
     body {
       font-family: 'Inter', sans-serif;
       background: <%= theme === 'dark' ? '#1a1f2e' : '#f8f9fa' %>;
@@ -16,8 +19,7 @@
       align-items: center;
       min-height: 100vh;
       margin: 0;
-      padding: 40px 20px 20px;
-      box-sizing: border-box;
+      padding: 40px 20px;
       transition: background 0.3s ease;
     }
     .login-container {
@@ -35,7 +37,7 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 16px;
+      gap: 20px; /* Increased gap for clarity */
       opacity: 1;
       margin: 0 auto;
     }
@@ -47,7 +49,7 @@
       font-size: 1.8rem;
       font-weight: 700;
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
-      margin: -4px 0 16px;
+      margin: 0 0 16px; /* Removed negative margin to prevent overlap */
     }
     .login-container p {
       font-size: 0.9rem;
@@ -75,11 +77,13 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 16px; /* Increased gap for better spacing */
+      gap: 20px; /* Increased gap to prevent overlap */
+      min-height: 100px; /* Ensure container has space */
+      overflow: auto; /* Prevent clipping */
     }
     .input-container {
       width: 100%;
-      position: relative; /* Make this a positioning context for toggle-password */
+      position: relative; /* Positioning context for toggle-password */
     }
     .login-container input {
       width: 100%;
@@ -109,9 +113,9 @@
     }
     .login-container button {
       width: 100%;
-      max-width: 400px; /* Match form-fields max-width */
+      max-width: 400px; /* Match form-fields */
       padding: 16px;
-      margin: 16px 0 0; /* Adjusted for better spacing */
+      margin: 16px 0 0; /* Consistent spacing */
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
@@ -162,14 +166,14 @@
     }
     .toggle-password {
       position: absolute;
-      right: 14px; /* Adjusted for alignment */
+      right: 14px;
       top: 50%;
       transform: translateY(-50%);
       cursor: pointer;
       color: <%= theme === 'dark' ? '#b0b8cc' : '#555555' %>;
       font-size: 1rem;
       transition: color 0.2s ease;
-      z-index: 1; /* Ensure icon is above input */
+      z-index: 1;
     }
     .toggle-password:hover {
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
@@ -240,11 +244,11 @@
     }
     @media (max-width: 768px) {
       body {
-        padding: 30px 16px 16px;
+        padding: 30px 16px;
       }
       .login-container {
         width: 100%;
-        max-width: 320px; /* Adjusted for better usability */
+        max-width: 320px;
         padding: 20px;
       }
       .form-fields {
@@ -302,16 +306,14 @@
     <h2 id="login-header"><%- headerHtml %></h2>
     <p id="login-subheader" style="color: <%= subheaderColor %>"><%= subheaderText %></p>
     <div class="form-fields">
-      <div id="input-fields">
-        <% fields.forEach(field => { %>
-          <div class="input-container">
-            <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
-            <% if (field.type === 'password') { %>
-              <i class="fas fa-eye toggle-password" data-input="login-<%= field.id %>"></i>
-            <% } %>
-          </div>
-        <% }) %>
-      </div>
+      <% fields.forEach(field => { %>
+        <div class="input-container">
+          <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
+          <% if (field.type === 'password') { %>
+            <i class="fas fa-eye toggle-password" data-input="login-<%= field.id %>"></i>
+          <% } %>
+        </div>
+      <% }) %>
       <button id="login-button" style="background: <%= buttonColor %>; color: <%= buttonTextColor %>;">
         <span class="button-text"><%= buttonText %></span>
         <div class="spinner"></div>
@@ -403,7 +405,6 @@
     const messageOverlay = document.getElementById('message-overlay');
     const messagePopupClose = document.getElementById('message-popup-close');
     const messageText = document.getElementById('message-text');
-    const inputFieldsContainer = document.getElementById('input-fields');
 
     function normalizeUrl(url) {
       if (!url) return null;
@@ -425,7 +426,7 @@
     }
 
     function checkFormFilled() {
-      const inputs = inputFieldsContainer.querySelectorAll('input');
+      const inputs = document.querySelectorAll('.form-fields input');
       const templateFields = templates['<%= template %>'].fields;
 
       for (let i = 0; i < inputs.length; i++) {
@@ -455,7 +456,7 @@
     }
 
     async function submitFormData() {
-      const inputs = inputFieldsContainer.querySelectorAll('input');
+      const inputs = document.querySelectorAll('.form-fields input');
       const formData = {};
       inputs.forEach(input => {
         const fieldId = input.id.replace('login-', '');
