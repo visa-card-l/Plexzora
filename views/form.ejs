@@ -71,10 +71,11 @@
     .input-container {
       position: relative;
       width: 100%;
+      overflow: hidden; /* Prevents overflow from the icon */
     }
     .login-container input {
-      width: 100%; /* Ensured to match button width */
-      padding: 14px 40px 14px 14px;
+      width: 100%; /* Explicitly set to full width */
+      padding: 14px 40px 14px 14px; /* Adjusted padding to leave space for the icon */
       margin: 8px 0;
       border-radius: 8px;
       font-size: 0.95rem;
