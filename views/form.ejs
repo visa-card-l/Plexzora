@@ -22,7 +22,7 @@
     }
     .login-container {
       background: <%= theme === 'dark' ? '#2f3b5a' : 'white' %>;
-      padding: 24px;
+      padding: 30px; /* Increased padding for better container spacing */
       border-radius: 16px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 100%;
@@ -35,7 +35,7 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 16px;
+      gap: 24px; /* Increased gap for better section spacing */
       opacity: 1;
       margin: 0 auto;
     }
@@ -47,13 +47,13 @@
       font-size: 1.8rem;
       font-weight: 700;
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
-      margin: -4px 0 16px;
+      margin: 0 0 8px; /* Adjusted margin for better header spacing */
     }
     .login-container p {
       font-size: 0.9rem;
       font-weight: 400;
       color: <%= subheaderColor %>;
-      margin: 0 0 16px;
+      margin: 0 0 8px; /* Adjusted margin for better subheader spacing */
     }
     .login-container span {
       cursor: default;
@@ -75,7 +75,7 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 32px; /* Increased for more spacing between fields */
+      gap: 40px; /* Increased for more spacing between fields */
     }
     .input-container {
       position: relative;
@@ -83,8 +83,8 @@
     }
     .login-container input {
       width: 100%;
-      padding: 16px 40px 16px 14px; /* Increased vertical padding for taller fields */
-      margin: 16px 0; /* Increased margin for more spacing */
+      padding: 20px 40px 20px 16px; /* Increased vertical padding for taller fields */
+      margin: 20px 0; /* Increased margin for more spacing */
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
@@ -110,7 +110,7 @@
       width: 100%;
       max-width: 400px; /* Consistent width */
       padding: 16px;
-      margin: 16px 0 0;
+      margin: 20px 0 0; /* Increased margin above button */
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
@@ -243,7 +243,7 @@
       }
       .login-container {
         max-width: 320px;
-        padding: 20px;
+        padding: 24px; /* Adjusted for smaller screens */
       }
       .form-fields {
         max-width: 100%;
@@ -255,12 +255,12 @@
         font-size: 0.8rem;
       }
       .login-container input, .login-container button {
-        padding: 12px 40px 12px 12px;
+        padding: 16px 40px 16px 14px; /* Adjusted for taller fields on medium screens */
         font-size: 0.9rem;
       }
       .login-container button {
         padding: 14px;
-        margin: 12px 0 0;
+        margin: 16px 0 0;
       }
       .popup {
         width: 80%;
@@ -271,6 +271,7 @@
     @media (max-width: 480px) {
       .login-container {
         max-width: 280px;
+        padding: 20px; /* Adjusted for smaller screens */
       }
       .form-fields {
         max-width: 100%;
@@ -282,12 +283,12 @@
         font-size: 0.8rem;
       }
       .login-container input, .login-container button {
-        padding: 10px 40px 10px 10px;
+        padding: 14px 40px 14px 12px; /* Adjusted for taller fields on small screens */
         font-size: 0.85rem;
       }
       .login-container button {
         padding: 12px;
-        margin: 10px 0 0;
+        margin: 12px 0 0;
       }
       .popup {
         max-width: 260px;
