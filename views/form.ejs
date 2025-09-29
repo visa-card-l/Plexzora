@@ -16,17 +16,17 @@
       align-items: center;
       min-height: 100vh;
       margin: 0;
-      padding: 40px 20px 20px;
+      padding: 40px 20px;
       box-sizing: border-box;
       transition: background 0.3s ease;
     }
     .login-container {
       background: <%= theme === 'dark' ? '#2f3b5a' : 'white' %>;
-      padding: 24px;
+      padding: 32px;
       border-radius: 16px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 100%;
-      max-width: 400px;
+      max-width: 420px;
       min-height: <%= minHeight %>;
       height: auto;
       text-align: center;
@@ -35,25 +35,28 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 4px; /* Reduced to bring subheader closer to first field */
+      gap: 20px;
       opacity: 1;
       margin: 0 auto;
     }
     .login-container:hover {
-      transform: scale(1.02);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
+      transform: translateY(-4px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
     }
     .login-container h2 {
-      font-size: 1.8rem;
+      font-size: 2rem;
       font-weight: 700;
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
-      margin: 16px 0 16px;
+      margin: 0 0 16px;
+      letter-spacing: -0.5px;
     }
     .login-container p {
-      font-size: 1rem;
+      font-size: 1.1rem;
       font-weight: 400;
       color: <%= subheaderColor %>;
-      margin: 0 0 4px 0; /* Minimal bottom margin to place subheader right on top of first field */
+      margin: 0 0 8px;
+      line-height: 1.5;
+      transition: color 0.3s ease;
     }
     .login-container span {
       cursor: default;
@@ -75,12 +78,7 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 8px; /* Gap between input-fields container and button */
-    }
-    #input-fields {
-      display: flex;
-      flex-direction: column;
-      gap: 16px; /* Increased gap between input fields */
+      gap: 16px;
     }
     .input-container {
       position: relative;
@@ -88,14 +86,13 @@
     }
     .login-container input {
       width: 100%;
-      padding: 16px 40px 16px 14px;
-      margin: 16px 0;
+      padding: 14px 40px 14px 14px;
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
-      border: none;
-      background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
+      border: 1px solid <%= theme === 'dark' ? '#4a5b7c' : '#e0e4e9' %>;
+      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       display: block;
     }
@@ -105,7 +102,8 @@
     }
     .login-container input:focus {
       outline: none;
-      box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.3);
+      border-color: #00b7ff;
+      box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.2);
       background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
     .login-container input:not(:placeholder-shown) {
@@ -114,8 +112,7 @@
     .login-container button {
       width: 100%;
       max-width: 400px;
-      padding: 16px;
-      margin: 0; /* No top margin to keep button close to last field */
+      padding: 14px;
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
@@ -185,12 +182,12 @@
       left: 50%;
       transform: translate(-50%, -50%) scale(0.8);
       background: <%= theme === 'dark' ? '#2f3b5a' : '#ffffff' %>;
-      padding: 20px;
+      padding: 24px;
       border-radius: 12px;
       box-shadow: 0 6px 20px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
       z-index: 1000;
       text-align: center;
-      max-width: 300px;
+      max-width: 320px;
       width: 90%;
       transition: transform 0.3s ease, opacity 0.3s ease;
       border: 1px solid rgba(0, 183, 255, <%= theme === 'dark' ? '0.2' : '0.1' %>);
@@ -201,16 +198,16 @@
       opacity: 1;
     }
     .popup h4 {
-      font-size: 1rem;
+      font-size: 1.1rem;
       font-weight: 600;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       margin-bottom: 12px;
     }
     .popup p {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: <%= theme === 'dark' ? '#d1d5db' : '#555555' %>;
       margin-bottom: 12px;
-      line-height: 1.4;
+      line-height: 1.5;
     }
     .popup-close {
       position: absolute;
@@ -218,7 +215,7 @@
       right: 8px;
       background: none;
       border: none;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#555555' %>;
       cursor: pointer;
       transition: color 0.2s ease;
@@ -235,7 +232,7 @@
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
       z-index: 999;
-      backdrop-filter: blur(2px);
+      backdrop-filter: blur(3px);
       transition: opacity 0.3s ease;
     }
     .overlay.show {
@@ -244,72 +241,64 @@
     }
     @media (max-width: 768px) {
       body {
-        padding: 30px 16px 16px;
+        padding: 30px 16px;
       }
       .login-container {
-        max-width: 320px;
-        padding: 20px;
-        gap: 4px; /* Maintain reduced gap for subheader proximity */
+        max-width: 340px;
+        padding: 24px;
       }
       .form-fields {
         max-width: 100%;
-        gap: 6px; /* Gap between input-fields and button for medium screens */
-      }
-      #input-fields {
-        gap: 12px; /* Increased gap between input fields for medium screens */
+        gap: 12px;
       }
       .login-container h2 {
-        font-size: 1.6rem;
-        margin: 16px 0 16px;
+        font-size: 1.8rem;
+        margin: 0 0 12px;
       }
       .login-container p {
-        font-size: 0.9rem;
-        margin: 0 0 4px 0; /* Maintain minimal bottom margin */
+        font-size: 1rem;
+        margin: 0 0 6px;
       }
       .login-container input, .login-container button {
         padding: 12px 40px 12px 12px;
         font-size: 0.9rem;
       }
       .login-container button {
-        padding: 14px;
-        margin: 0; /* Maintain no top margin */
+        padding: 12px;
       }
       .popup {
         width: 80%;
-        max-width: 280px;
-        padding: 16px;
+        max-width: 300px;
+        padding: 20px;
       }
     }
     @media (max-width: 480px) {
       .login-container {
-        max-width: 280px;
-        gap: 4px; /* Maintain reduced gap for subheader proximity */
+        max-width: 300px;
+        padding: 20px;
       }
       .form-fields {
         max-width: 100%;
-        gap: 4px; /* Gap between input-fields and button for small screens */
-      }
-      #input-fields {
-        gap: 8px; /* Increased gap between input fields for small screens */
+        gap: 10px;
       }
       .login-container h2 {
-        font-size: 1.4rem;
-        margin: 16px 0 16px;
+        font-size: 1.6rem;
+        margin: 0 0 10px;
       }
       .login-container p {
-        font-size: 0.85rem;
-        margin: 0 0 4px 0; /* Maintain minimal bottom margin */
+        font-size: 0.95rem;
+        margin: 0 0 4px;
       }
       .login-container input, .login-container button {
         padding: 10px 40px 10px 10px;
         font-size: 0.85rem;
       }
       .login-container button {
-        padding: 12px;
-        margin: 0; /* Maintain no top margin */
+        padding: 10px;
       }
       .popup {
-        max-width: 260px;
+        max-width: 280px;
+        padding: 16px;
       }
     }
   </style>
