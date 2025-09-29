@@ -35,7 +35,7 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 16px;
+      gap: 4px; /* Reduced to bring subheader closer to first field */
       opacity: 1;
       margin: 0 auto;
     }
@@ -53,7 +53,7 @@
       font-size: 1rem;
       font-weight: 400;
       color: <%= subheaderColor %>;
-      margin: 0 0 16px;
+      margin: 0 0 4px 0; /* Minimal bottom margin to place subheader right on top of first field */
     }
     .login-container span {
       cursor: default;
@@ -75,7 +75,12 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 12px; /* Increased gap slightly for more spacing between fields */
+      gap: 8px; /* Gap between input-fields container and button */
+    }
+    #input-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 16px; /* Increased gap between input fields */
     }
     .input-container {
       position: relative;
@@ -244,10 +249,14 @@
       .login-container {
         max-width: 320px;
         padding: 20px;
+        gap: 4px; /* Maintain reduced gap for subheader proximity */
       }
       .form-fields {
         max-width: 100%;
-        gap: 8px; /* Increased gap slightly for medium screens */
+        gap: 6px; /* Gap between input-fields and button for medium screens */
+      }
+      #input-fields {
+        gap: 12px; /* Increased gap between input fields for medium screens */
       }
       .login-container h2 {
         font-size: 1.6rem;
@@ -255,6 +264,7 @@
       }
       .login-container p {
         font-size: 0.9rem;
+        margin: 0 0 4px 0; /* Maintain minimal bottom margin */
       }
       .login-container input, .login-container button {
         padding: 12px 40px 12px 12px;
@@ -273,10 +283,14 @@
     @media (max-width: 480px) {
       .login-container {
         max-width: 280px;
+        gap: 4px; /* Maintain reduced gap for subheader proximity */
       }
       .form-fields {
         max-width: 100%;
-        gap: 6px; /* Increased gap slightly for small screens */
+        gap: 4px; /* Gap between input-fields and button for small screens */
+      }
+      #input-fields {
+        gap: 8px; /* Increased gap between input fields for small screens */
       }
       .login-container h2 {
         font-size: 1.4rem;
@@ -284,6 +298,7 @@
       }
       .login-container p {
         font-size: 0.85rem;
+        margin: 0 0 4px 0; /* Maintain minimal bottom margin */
       }
       .login-container input, .login-container button {
         padding: 10px 40px 10px 10px;
