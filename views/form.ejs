@@ -75,7 +75,7 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 20px; /* Increased for better spacing */
+      gap: 24px; /* Increased for more spacing between fields */
     }
     .input-container {
       position: relative;
@@ -84,12 +84,12 @@
     .login-container input {
       width: 100%;
       padding: 14px 40px 14px 14px;
-      margin: 8px 0; /* Added margin for spacing */
+      margin: 12px 0; /* Increased margin for more spacing */
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
-      border: none; /* Removed hardcoded border to allow borderShadow */
+      border: none; /* No hardcoded border to allow borderShadow */
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       display: block;
