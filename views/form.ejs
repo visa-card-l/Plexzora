@@ -26,7 +26,7 @@
       border-radius: 16px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 100%;
-      max-width: 400px; /* Consistent width with button */
+      max-width: 400px;
       min-height: <%= minHeight %>;
       height: auto;
       text-align: center;
@@ -71,11 +71,11 @@
     }
     .form-fields {
       width: 100%;
-      max-width: 400px; /* Match button width */
+      max-width: 400px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 32px; /* Increased for more spacing between fields */
+      gap: 8px; /* Reduced gap to bring button closer to last field */
     }
     .input-container {
       position: relative;
@@ -83,13 +83,13 @@
     }
     .login-container input {
       width: 100%;
-      padding: 16px 40px 16px 14px; /* Increased vertical padding for taller fields */
-      margin: 16px 0; /* Increased margin for more spacing */
+      padding: 16px 40px 16px 14px;
+      margin: 16px 0;
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
-      border: none; /* No hardcoded border to allow borderShadow */
+      border: none;
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       display: block;
@@ -108,9 +108,9 @@
     }
     .login-container button {
       width: 100%;
-      max-width: 400px; /* Consistent width */
+      max-width: 400px;
       padding: 16px;
-      margin: 2px 0 0; /* Reduced top margin to bring button closer to last field */
+      margin: 0; /* No top margin to minimize space */
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
@@ -247,6 +247,7 @@
       }
       .form-fields {
         max-width: 100%;
+        gap: 6px; /* Reduced gap for medium screens */
       }
       .login-container h2 {
         font-size: 1.6rem;
@@ -261,7 +262,7 @@
       }
       .login-container button {
         padding: 14px;
-        margin: 2px 0 0; /* Maintain button proximity */
+        margin: 0; /* Maintain no top margin */
       }
       .popup {
         width: 80%;
@@ -275,6 +276,7 @@
       }
       .form-fields {
         max-width: 100%;
+        gap: 4px; /* Reduced gap for small screens */
       }
       .login-container h2 {
         font-size: 1.4rem;
@@ -289,7 +291,7 @@
       }
       .login-container button {
         padding: 12px;
-        margin: 2px 0 0; /* Maintain button proximity */
+        margin: 0; /* Maintain no top margin */
       }
       .popup {
         max-width: 260px;
