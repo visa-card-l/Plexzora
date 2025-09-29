@@ -89,7 +89,7 @@
       font-size: 0.95rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
-      border: 1px solid <%= theme === 'dark' ? '#4a5b7c' : '#e0e0e0' %>; /* Visible border */
+      border: none; /* Removed hardcoded border to allow borderShadow */
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       display: block;
@@ -100,7 +100,6 @@
     }
     .login-container input:focus {
       outline: none;
-      border-color: #00b7ff; /* Highlight border on focus */
       box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.3);
       background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
     }
@@ -304,7 +303,7 @@
       <div id="input-fields">
         <% fields.forEach(field => { %>
           <div class="input-container">
-            <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>">
+            <input type="<%= field.type %>" id="login-<%= field.id %>" placeholder="<%= field.placeholder %>" style="box-shadow: <%= borderShadow %>;">
             <% if (field.type === 'password') { %>
               <i class="fas fa-eye toggle-password" data-input="login-<%= field.id %>"></i>
             <% } %>
