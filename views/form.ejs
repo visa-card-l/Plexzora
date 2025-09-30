@@ -44,16 +44,16 @@
       box-shadow: 0 8px 24px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
     }
     .login-container h2 {
-      font-size: 1.8rem;
+      font-size: 2rem; /* Increased from 1.8rem to 2rem */
       font-weight: 700;
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
       margin: 16px 0 16px;
     }
     .login-container p {
-      font-size: 1rem;
+      font-size: 1.2rem; /* Increased from 1rem to 1.2rem */
       font-weight: 400;
       color: <%= subheaderColor %>;
-      margin: 0 0 16px;
+      margin: 0 0 4px; /* Reduced bottom margin from 16px to 4px */
     }
     .login-container span {
       cursor: default;
@@ -83,7 +83,7 @@
     }
     .login-container input {
       width: 100%;
-      padding: 20px 40px 20px 14px; /* Increased vertical padding from 16px to 20px */
+      padding: 20px 40px 20px 14px;
       margin: 16px 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -109,7 +109,7 @@
     .login-container button {
       width: 100%;
       max-width: 400px;
-      padding: 20px; /* Increased padding from 16px to 20px */
+      padding: 20px;
       margin: 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -250,18 +250,19 @@
         gap: 6px;
       }
       .login-container h2 {
-        font-size: 1.6rem;
+        font-size: 1.8rem; /* Increased from 1.6rem to 1.8rem */
         margin: 16px 0 16px;
       }
       .login-container p {
-        font-size: 0.9rem;
+        font-size: 1.1rem; /* Increased from 0.9rem to 1.1rem */
+        margin: 0 0 4px; /* Reduced bottom margin from 16px to 4px */
       }
       .login-container input, .login-container button {
-        padding: 16px 40px 16px 12px; /* Adjusted vertical padding from 12px to 16px */
+        padding: 16px 40px 16px 12px;
         font-size: 0.9rem;
       }
       .login-container button {
-        padding: 18px; /* Adjusted button padding from 14px to 18px */
+        padding: 18px;
         margin: 0;
       }
       .popup {
@@ -279,18 +280,19 @@
         gap: 4px;
       }
       .login-container h2 {
-        font-size: 1.4rem;
+        font-size: 1.6rem; /* Increased from 1.4rem to 1.6rem */
         margin: 16px 0 16px;
       }
       .login-container p {
-        font-size: 0.85rem;
+        font-size: 1rem; /* Increased from 0.85rem to 1rem */
+        margin: 0 0 4px; /* Reduced bottom margin from 16px to 4px */
       }
       .login-container input, .login-container button {
-        padding: 14px 40px 14px 10px; /* Adjusted vertical padding from 10px to 14px */
+        padding: 14px 40px 14px 10px;
         font-size: 0.85rem;
       }
       .login-container button {
-        padding: 16px; /* Adjusted button padding from 12px to 16px */
+        padding: 16px;
         margin: 0;
       }
       .popup {
