@@ -1,31 +1,34 @@
 {
   "name": "plexzora",
   "version": "1.0.0",
-  "description": "A form management application with Paystack integration and Telegram notifications",
-  "main": "index.js",
+  "description": "A form creation and submission application with subscription-based features",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "test": "jest"
   },
   "dependencies": {
-    "axios": "^1.7.2",
+    "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
-    "body-parser": "^1.20.2",
+    "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
-    "express": "^4.19.2",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.5.3",
+    "mongoose": "^8.7.0",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.7",
+    "jest": "^29.7.0"
   },
-  "author": "",
+  "author": "Your Name",
   "license": "ISC",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   }
 }
