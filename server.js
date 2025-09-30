@@ -50,7 +50,7 @@ const mongoStore = new MongoStore({
 const signupLimiter = rateLimit({
   store: mongoStore,
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20,
+  max: 40,
   keyGenerator: (req) => req.ip,
   handler: (req, res) => {
     res.status(429).json({ error: 'Too many signup attempts from this IP, please try again later.' });
@@ -60,7 +60,7 @@ const signupLimiter = rateLimit({
 const loginLimiter = rateLimit({
   store: mongoStore,
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20,
+  max: 50,
   keyGenerator: (req) => req.ip,
   handler: (req, res) => {
     res.status(429).json({ error: 'Too many login attempts from this IP, please try again later.' });
