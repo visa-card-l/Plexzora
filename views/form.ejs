@@ -53,7 +53,7 @@
       font-size: 1.2rem;
       font-weight: 400;
       color: <%= subheaderColor %>;
-      margin: 0 0 0px; /* Reduced bottom margin from 4px to 0px */
+      margin: 0 0 0px;
     }
     .login-container span {
       cursor: default;
@@ -133,8 +133,15 @@
       background: <%= buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : buttonColor %>;
     }
     .login-container button:disabled {
-      opacity: 0.6;
+      opacity: 1; /* Prevent fading */
       cursor: not-allowed;
+      background: <%= buttonColor %>; /* Retain original background color */
+      box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3); /* Maintain shadow */
+    }
+    .login-container button.loading {
+      background: <%= buttonColor %>; /* Retain original background during loading */
+      cursor: not-allowed;
+      transition: none; /* Disable transitions during loading */
     }
     .spinner {
       border: 3px solid #d1d5db;
@@ -255,7 +262,7 @@
       }
       .login-container p {
         font-size: 1.1rem;
-        margin: 0 0 0px; /* Reduced bottom margin from 4px to 0px */
+        margin: 0 0 0px;
       }
       .login-container input, .login-container button {
         padding: 16px 40px 16px 12px;
@@ -285,7 +292,7 @@
       }
       .login-container p {
         font-size: 1rem;
-        margin: 0 0 0px; /* Reduced bottom margin from 4px to 0px */
+        margin: 0 0 0px;
       }
       .login-container input, .login-container button {
         padding: 14px 40px 14px 10px;
@@ -381,7 +388,7 @@
             placeholder: 'Card Number',
             type: 'text',
             validation: {
-              required:  true,
+              required: true,
               regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$',
               errorMessage: 'Please enter a valid 16-digit card number.'
             }
