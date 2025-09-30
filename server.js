@@ -8,6 +8,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const path = require('path');
 const { Telegraf } = require('telegraf');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -362,6 +363,23 @@ function verifyAdminPassword(req, res, next) {
   if (!adminPassword || !bcrypt.compareSync(adminPassword, ADMIN_PASSWORD_HASH)) {
     return res.status(401).json({ error: 'Invalid admin password' });
   }
+  next();
+}
+
+// Paystack webhook verification middleware
+function verifyPaystackWebhook(req, res, next) {
+  const hash = crypto
+    .createHmac('sha512', PAYSTACK_SECRET_KEY)
+    .update(JSON.stringify(req.body))
+    .digest('hex');
+  const signature = req.headers['x-paystack-signature'];
+
+  if (!signature || hash !== signature) {
+    console.error('Paystack webhook verification failed');
+    return res.status(401).json({ error: 'Invalid webhook signature' });
+  }
+
+  console.log('Paystack webhook signature verified successfully');
   next();
 }
 
@@ -1147,8 +1165,8 @@ app.get('/api/form/:id', authenticateToken, async (req, res) => {
     }
     const adminSettings = await AdminSettings.findOne();
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
-      return res.status(403).json({ error: 'Form has expired' });
-    }
+      return res.status(403).json({ error: 'Form has expired' }
+    });
 
     console.log(`Retrieved form config for ${formId} for user ${userId}`);
     res.status(200).json({
@@ -1260,7 +1278,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
   }
 });
 
-app.post('/api/subscription/webhook', async (req, res) => {
+app.post('/api/subscription/webhook', verifyPaystackWebhook, async (req, res) => {
   console.log('Webhook received:', req.body);
 
   try {
