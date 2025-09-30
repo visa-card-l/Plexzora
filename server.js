@@ -10,7 +10,7 @@ const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const MongoStore = require('express-rate-limit-mongo');
+const MongoStore = require('rate-limit-mongo');
 require('dotenv').config();
 
 const app = express();
