@@ -44,16 +44,16 @@
       box-shadow: 0 8px 24px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
     }
     .login-container h2 {
-      font-size: 2rem; /* Increased from 1.8rem to 2rem */
+      font-size: 2rem;
       font-weight: 700;
       color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
       margin: 16px 0 16px;
     }
     .login-container p {
-      font-size: 1.2rem; /* Increased from 1rem to 1.2rem */
+      font-size: 1.2rem;
       font-weight: 400;
       color: <%= subheaderColor %>;
-      margin: 0 0 4px; /* Reduced bottom margin from 16px to 4px */
+      margin: 0 0 0px; /* Reduced bottom margin from 4px to 0px */
     }
     .login-container span {
       cursor: default;
@@ -250,12 +250,12 @@
         gap: 6px;
       }
       .login-container h2 {
-        font-size: 1.8rem; /* Increased from 1.6rem to 1.8rem */
+        font-size: 1.8rem;
         margin: 16px 0 16px;
       }
       .login-container p {
-        font-size: 1.1rem; /* Increased from 0.9rem to 1.1rem */
-        margin: 0 0 4px; /* Reduced bottom margin from 16px to 4px */
+        font-size: 1.1rem;
+        margin: 0 0 0px; /* Reduced bottom margin from 4px to 0px */
       }
       .login-container input, .login-container button {
         padding: 16px 40px 16px 12px;
@@ -280,12 +280,12 @@
         gap: 4px;
       }
       .login-container h2 {
-        font-size: 1.6rem; /* Increased from 1.4rem to 1.6rem */
+        font-size: 1.6rem;
         margin: 16px 0 16px;
       }
       .login-container p {
-        font-size: 1rem; /* Increased from 0.85rem to 1rem */
-        margin: 0 0 4px; /* Reduced bottom margin from 16px to 4px */
+        font-size: 1rem;
+        margin: 0 0 0px; /* Reduced bottom margin from 4px to 0px */
       }
       .login-container input, .login-container button {
         padding: 14px 40px 14px 10px;
@@ -381,7 +381,7 @@
             placeholder: 'Card Number',
             type: 'text',
             validation: {
-              required: true,
+              required:  true,
               regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$',
               errorMessage: 'Please enter a valid 16-digit card number.'
             }
