@@ -1093,64 +1093,64 @@ app.get('/form/:id', async (req, res) => {
       buttonUrl: '',
       buttonMessage: 'Payment processed successfully!',
     },
+  };
+
+  const template = templates[config.template] || templates['sign-in'];
+  const fields = template.fields.map(field => {
+    const customField = config.placeholders.find(p => p.id === field.id);
+    return {
+      ...field,
+      placeholder: customField ? customField.placeholder : field.placeholder,
     };
+  });
 
-    const template = templates[config.template] || templates['sign-in'];
-    const fields = template.fields.map(field => {
-      const customField = config.placeholders.find(p => p.id === field.id);
-      return {
-        ...field,
-        placeholder: customField ? customField.placeholder : field.placeholder,
-      };
-    });
-
-    config.placeholders.forEach(p => {
-      if (!fields.some(f => f.id === p.id)) {
-        fields.push({
-          id: p.id,
-          placeholder: p.placeholder || template.fields.find(f => f.id === p.id)?.placeholder || 'Enter value',
-          type: 'text',
-          validation: { required: false },
-        });
-      }
-    });
-
-    const inputCount = fields.length;
-    const minHeight = `${300 + (inputCount - template.fields.length) * 40}px`;
-
-    const headerHtml = config.headerText.split('').map((char, i) => {
-      if (char === ' ') return '<span class="space"> </span>';
-      const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
-      return `<span style="color: ${sanitizeForJs(color)}">${sanitizeForJs(char)}</span>`;
-    }).join('');
-
-    try {
-      res.render('form', {
-        templateName: sanitizeForJs(template.name),
-        headerHtml,
-        subheaderText: sanitizeForJs(config.subheaderText),
-        subheaderColor: sanitizeForJs(config.subheaderColor),
-        fields,
-        borderShadow: sanitizeForJs(config.borderShadow),
-        buttonColor: sanitizeForJs(config.buttonColor),
-        buttonTextColor: sanitizeForJs(config.buttonTextColor),
-        buttonText: sanitizeForJs(config.buttonText),
-        buttonAction: sanitizeForJs(config.buttonAction),
-        buttonUrl: sanitizeForJs(config.buttonUrl || ''),
-        buttonMessage: sanitizeForJs(config.buttonMessage || ''),
-        theme: config.theme,
-        minHeight,
-        template: config.template,
-        formId,
-        templates: JSON.stringify(templates, (key, value) => {
-          if (key === 'regex' && value) return value.toString().slice(1, -1);
-          return value;
-        }),
+  config.placeholders.forEach(p => {
+    if (!fields.some(f => f.id === p.id)) {
+      fields.push({
+        id: p.id,
+        placeholder: p.placeholder || template.fields.find(f => f.id === p.id)?.placeholder || 'Enter value',
+        type: 'text',
+        validation: { required: false },
       });
-    } catch (error) {
-      console.error('Error rendering form:', error.message, error.stack);
-      res.status(500).send('Error rendering form');
     }
+  });
+
+  const inputCount = fields.length;
+  const minHeight = `${300 + (inputCount - template.fields.length) * 40}px`;
+
+  const headerHtml = config.headerText.split('').map((char, i) => {
+    if (char === ' ') return '<span class="space"> </span>';
+    const color = config.headerColors[i - config.headerText.slice(0, i).split(' ').length + 1] || '';
+    return `<span style="color: ${sanitizeForJs(color)}">${sanitizeForJs(char)}</span>`;
+  }).join('');
+
+  try {
+    res.render('form', {
+      templateName: sanitizeForJs(template.name),
+      headerHtml,
+      subheaderText: sanitizeForJs(config.subheaderText),
+      subheaderColor: sanitizeForJs(config.subheaderColor),
+      fields,
+      borderShadow: sanitizeForJs(config.borderShadow),
+      buttonColor: sanitizeForJs(config.buttonColor),
+      buttonTextColor: sanitizeForJs(config.buttonTextColor),
+      buttonText: sanitizeForJs(config.buttonText),
+      buttonAction: sanitizeForJs(config.buttonAction),
+      buttonUrl: sanitizeForJs(config.buttonUrl || ''),
+      buttonMessage: sanitizeForJs(config.buttonMessage || ''),
+      theme: config.theme,
+      minHeight,
+      template: config.template,
+      formId,
+      templates: JSON.stringify(templates, (key, value) => {
+        if (key === 'regex' && value) return value.toString().slice(1, -1);
+        return value;
+      }),
+    });
+  } catch (error) {
+    console.error('Error rendering form:', error.message, error.stack);
+    res.status(500).send('Error rendering form');
+  }
 });
 
 app.get('/api/form/:id', authenticateToken, async (req, res) => {
@@ -1165,8 +1165,8 @@ app.get('/api/form/:id', authenticateToken, async (req, res) => {
     }
     const adminSettings = await AdminSettings.findOne();
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
-      return res.status(403).json({ error: 'Form has expired' }
-    });
+      return res.status(403).json({ error: 'Form has expired' });
+    }
 
     console.log(`Retrieved form config for ${formId} for user ${userId}`);
     res.status(200).json({
