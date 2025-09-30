@@ -83,7 +83,7 @@
     }
     .login-container input {
       width: 300px; /* Adjusted to match example */
-      padding: 16px 40px 16px 14px;
+      padding: 12px 40px 12px 14px; /* Increased vertical padding */
       margin: 16px 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -93,6 +93,7 @@
       background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
       color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
       display: block;
+      min-height: 40px; /* Added to ensure normal field height */
     }
     .login-container input::placeholder {
       color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
@@ -109,7 +110,7 @@
     .login-container button {
       width: 300px; /* Adjusted to match example */
       max-width: 400px;
-      padding: 16px;
+      padding: 12px 16px; /* Increased vertical padding */
       margin: 0; /* No top margin to minimize space */
       border-radius: 8px;
       font-size: 0.95rem;
@@ -126,6 +127,7 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+      min-height: 40px; /* Added to ensure normal button height */
     }
     .login-container button:hover {
       transform: translateY(-2px);
@@ -257,14 +259,16 @@
         font-size: 0.9rem;
       }
       .login-container input, .login-container button {
-        padding: 12px 40px 12px 12px;
+        padding: 12px 40px 12px 12px; /* Increased vertical padding */
         font-size: 0.9rem;
         width: 240px; /* Adjusted to match example */
+        min-height: 40px; /* Added to ensure normal field height */
       }
       .login-container button {
-        padding: 14px;
+        padding: 12px 16px; /* Increased vertical padding */
         margin: 0; /* Maintain no top margin */
         width: 240px; /* Adjusted to match example */
+        min-height: 40px; /* Added to ensure normal button height */
       }
       .popup {
         width: 80%;
@@ -288,14 +292,16 @@
         font-size: 0.85rem;
       }
       .login-container input, .login-container button {
-        padding: 10px 40px 10px 10px;
+        padding: 12px 40px 12px 10px; /* Increased vertical padding */
         font-size: 0.85rem;
         width: 210px; /* Adjusted to match example */
+        min-height: 40px; /* Added to ensure normal field height */
       }
       .login-container button {
-        padding: 12px;
+        padding: 12px 16px; /* Increased vertical padding */
         margin: 0; /* Maintain no top margin */
         width: 210px; /* Adjusted to match example */
+        min-height: 40px; /* Added to ensure normal button height */
       }
       .popup {
         max-width: 260px;
