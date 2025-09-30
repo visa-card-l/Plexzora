@@ -101,6 +101,8 @@ const subscriptionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now, index: true },
 }, { timestamps: true });
 
+subscriptionSchema.index({ userId: 1, status: 1, endDate: -1 });
+
 const telegramSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true, index: true },
   chatId: { type: String, required: true },
