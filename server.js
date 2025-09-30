@@ -9,6 +9,8 @@ const mongoose = require('mongoose');
 const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
+const MongoStore = require('express-rate-limit-mongo');
 require('dotenv').config();
 
 const app = express();
@@ -17,11 +19,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
-if (!TELEGRAM_BOT_TOKEN) {
-  console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
-  process.exit(1);
-}
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
@@ -37,6 +34,91 @@ mongoose.connect(MONGODB_URI, {
 }).catch(err => {
   console.error('MongoDB connection error:', err.message, err.stack);
   process.exit(1);
+});
+
+// MongoDB Rate Limit Store
+const mongoStore = new MongoStore({
+  uri: MONGODB_URI,
+  collectionName: 'rateLimits',
+  expireTimeMs: 24 * 60 * 60 * 1000, // Expire entries after 24 hours
+  errorHandler: (error) => {
+    console.error('Rate limit MongoDB store error:', error.message);
+  },
+});
+
+// Rate Limiters
+const signupLimiter = rateLimit({
+  store: mongoStore,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many signup attempts from this IP, please try again later.' });
+  },
+});
+
+const loginLimiter = rateLimit({
+  store: mongoStore,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many login attempts from this IP, please try again later.' });
+  },
+});
+
+const formSubmitLimiter = rateLimit({
+  store: mongoStore,
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 50,
+  keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many form submissions from this IP, please try again later.' });
+  },
+});
+
+const createFormLimiter = rateLimit({
+  store: mongoStore,
+  windowMs: 24 * 60 * 60 * 1000, // 24 hours
+  keyGenerator: (req) => req.user.userId,
+  max: async (req) => {
+    const adminSettings = await AdminSettings.findOne();
+    const isSubscribed = await hasActiveSubscription(req.user.userId);
+    return isSubscribed ? 50 : (adminSettings.restrictionsEnabled ? adminSettings.maxFormsPerUserPerDay : Infinity);
+  },
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Form creation limit exceeded. Please try again tomorrow or upgrade your subscription.' });
+  },
+});
+
+const webhookLimiter = rateLimit({
+  store: mongoStore,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,
+  keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many webhook requests from this IP, please try again later.' });
+  },
+});
+
+const initiatePaymentLimiter = rateLimit({
+  store: mongoStore,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 25,
+  keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many payment initiation attempts from this IP, please try again later.' });
+  },
+});
+
+const passwordResetLimiter = rateLimit({
+  store: mongoStore,
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  keyGenerator: (req) => req.ip,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many password reset attempts from this IP, please try again later.' });
+  },
 });
 
 // Mongoose Schemas
@@ -158,6 +240,11 @@ mongoose.connection.on('error', (err) => {
 });
 
 // Initialize Telegram bot
+if (!TELEGRAM_BOT_TOKEN) {
+  console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
+  process.exit(1);
+}
+
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 bot.start(async (ctx) => {
@@ -368,7 +455,6 @@ function verifyAdminPassword(req, res, next) {
   next();
 }
 
-// Paystack webhook verification middleware
 function verifyPaystackWebhook(req, res, next) {
   const hash = crypto
     .createHmac('sha512', PAYSTACK_SECRET_KEY)
@@ -383,6 +469,30 @@ function verifyPaystackWebhook(req, res, next) {
 
   console.log('Paystack webhook signature verified successfully');
   next();
+}
+
+async function createFormWithTransaction(userId, formId, createdAt) {
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+    const adminSettings = await AdminSettings.findOne().session(session);
+    const isSubscribed = await hasActiveSubscription(userId);
+    
+    if (!isSubscribed && adminSettings.restrictionsEnabled) {
+      const userFormCountToday = await countUserFormsToday(userId);
+      if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
+        throw new Error(`Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached`);
+      }
+    }
+
+    await new FormCreation({ userId, formId, createdAt }).save({ session });
+    await session.commitTransaction();
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
 }
 
 // Routes
@@ -404,7 +514,7 @@ app.get('/user', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/signup', async (req, res) => {
+app.post('/signup', signupLimiter, async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!email || !password) {
@@ -437,14 +547,14 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-app.post('/login', async (req, res) => {
+app.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ parse });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -462,7 +572,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.post('/forgot-password', async (req, res) => {
+app.post('/forgot-password', passwordResetLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
@@ -481,7 +591,7 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
-app.post('/reset-password', async (req, res) => {
+app.post('/reset-password', passwordResetLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -721,24 +831,16 @@ app.get('/get', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/create', authenticateToken, async (req, res) => {
+app.post('/create', authenticateToken, createFormLimiter, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
     const userId = req.user.userId;
     const adminSettings = await AdminSettings.findOne();
 
-    const isSubscribed = await hasActiveSubscription(userId);
-
-    if (!isSubscribed && adminSettings.restrictionsEnabled) {
-      const userFormCountToday = await countUserFormsToday(userId);
-      if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
-        return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
-      }
-    }
-
     const templateId = req.body.template || 'sign-in';
     const formId = await generateShortCode();
     const validActions = ['url', 'message'];
+    const isSubscribed = await hasActiveSubscription(userId);
     const config = {
       formId,
       userId,
@@ -771,7 +873,7 @@ app.post('/create', authenticateToken, async (req, res) => {
       config.buttonMessage = 'Form submitted successfully!';
     }
 
-    await new FormCreation({ userId, formId, createdAt: config.createdAt }).save();
+    await createFormWithTransaction(userId, formId, config.createdAt);
     await new FormConfig(config).save();
     console.log(`Stored form config for ${formId} for user ${userId}:`, config);
 
@@ -782,7 +884,10 @@ app.post('/create', authenticateToken, async (req, res) => {
     res.status(200).json({ url, formId, expiresAt: config.expiresAt });
   } catch (error) {
     console.error('Error in /create:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to generate shareable link', details: error.message });
+    res.status(error.message.includes('Maximum form limit') ? 429 : 500).json({
+      error: error.message.includes('Maximum form limit') ? error.message : 'Failed to generate shareable link',
+      details: error.message,
+    });
   }
 });
 
@@ -856,7 +961,7 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/form/:id/submit', async (req, res) => {
+app.post('/form/:id/submit', formSubmitLimiter, async (req, res) => {
   const formId = req.params.id;
 
   const config = await FormConfig.findOne({ formId });
@@ -1187,7 +1292,7 @@ function isValidPlan(planId) {
   return allowedPlans.includes(planId);
 }
 
-app.post('/api/subscription/initiate-payment', authenticateToken, async (req, res) => {
+app.post('/api/subscription/initiate-payment', authenticateToken, initiatePaymentLimiter, async (req, res) => {
   const { planId, email, price } = req.body;
   const userId = req.user.userId;
 
@@ -1204,7 +1309,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
       return res.status(400).json({ error: `Invalid planId. Must be one of: ${allowedPlans.join(', ')}` });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\\s@]+$/.test(email)) {
       console.error('Validation failed: Invalid email format');
       return res.status(400).json({ error: 'Invalid email format' });
     }
@@ -1280,7 +1385,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
   }
 });
 
-app.post('/api/subscription/webhook', verifyPaystackWebhook, async (req, res) => {
+app.post('/api/subscription/webhook', webhookLimiter, verifyPaystackWebhook, async (req, res) => {
   console.log('Webhook received:', req.body);
 
   try {
