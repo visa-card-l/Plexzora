@@ -1,23 +1,30 @@
 {
   "name": "plexzora",
   "version": "1.0.0",
-  "description": "A form management application with MongoDB, Express, and Telegram integration",
-  "main": "server.js",
+  "description": "A form management application with Paystack integration and Telegram notifications",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
-    "axios": "^1.7.7",
+    "axios": "^1.7.2",
     "bcryptjs": "^2.4.3",
-    "body-parser": "^1.20.3",
+    "body-parser": "^1.20.2",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
-    "express": "^4.21.0",
+    "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.7.0",
+    "mongoose": "^8.5.3",
     "telegraf": "^4.16.3"
   },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "author": "",
+  "license": "ISC",
   "engines": {
     "node": ">=14.0.0"
   }
