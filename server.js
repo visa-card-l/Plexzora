@@ -47,6 +47,8 @@ const submissionSchema = new mongoose.Schema({
   data: { type: Object, required: true },
 }, { timestamps: true });
 
+submissionSchema.index({ userId: 1, formId: 1 });
+
 const formConfigSchema = new mongoose.Schema({
   formId: { type: String, required: true, unique: true, index: true },
   userId: { type: String, required: true, index: true },
