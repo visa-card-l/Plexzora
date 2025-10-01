@@ -9,8 +9,6 @@ const mongoose = require('mongoose');
 const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
-const rateLimit = require('express-rate-limit');
-const MongoStore = require('rate-limit-mongo');
 require('dotenv').config();
 
 const app = express();
@@ -19,15 +17,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
 
-// Check for Telegram bot token
 if (!TELEGRAM_BOT_TOKEN) {
   console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
   process.exit(1);
 }
 
 // MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
 console.log('Attempting to connect to MongoDB with URI:', MONGODB_URI.replace(/:([^:@]+)@/, ':****@'));
 
 mongoose.connect(MONGODB_URI, {
@@ -40,40 +37,6 @@ mongoose.connect(MONGODB_URI, {
 }).catch(err => {
   console.error('MongoDB connection error:', err.message, err.stack);
   process.exit(1);
-});
-
-// Rate Limiters
-const signupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 30, // 30 signup requests per IP per hour
-  message: 'Too many signup attempts from this IP, please try again after an hour.',
-  store: new MongoStore({
-    uri: MONGODB_URI,
-    collectionName: 'rateLimitSignup',
-    expireTimeMs: 60 * 60 * 1000, // Match windowMs
-  }),
-});
-
-const loginLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 30, // 30 login requests per IP per hour
-  message: 'Too many login attempts from this IP, please try again after an hour.',
-  store: new MongoStore({
-    uri: MONGODB_URI,
-    collectionName: 'rateLimitLogin',
-    expireTimeMs: 60 * 60 * 1000, // Match windowMs
-  }),
-});
-
-const formSubmitLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 50, // 50 form submissions per IP per hour
-  message: 'Too many form submissions from this IP, please try again after an hour.',
-  store: new MongoStore({
-    uri: MONGODB_URI,
-    collectionName: 'rateLimitFormSubmit',
-    expireTimeMs: 60 * 60 * 1000, // Match windowMs
-  }),
 });
 
 // Mongoose Schemas
@@ -248,7 +211,6 @@ process.on('SIGTERM', () => {
 });
 
 // Middleware
-app.set('trust proxy', 1); // Trust proxy for correct IP detection
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://smavo.onrender.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -406,6 +368,7 @@ function verifyAdminPassword(req, res, next) {
   next();
 }
 
+// Paystack webhook verification middleware
 function verifyPaystackWebhook(req, res, next) {
   const hash = crypto
     .createHmac('sha512', PAYSTACK_SECRET_KEY)
@@ -441,7 +404,7 @@ app.get('/user', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/signup', signupLimiter, async (req, res) => {
+app.post('/signup', async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!email || !password) {
@@ -474,7 +437,7 @@ app.post('/signup', signupLimiter, async (req, res) => {
   }
 });
 
-app.post('/login', loginLimiter, async (req, res) => {
+app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -893,7 +856,7 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/form/:id/submit', formSubmitLimiter, async (req, res) => {
+app.post('/form/:id/submit', async (req, res) => {
   const formId = req.params.id;
 
   const config = await FormConfig.findOne({ formId });
