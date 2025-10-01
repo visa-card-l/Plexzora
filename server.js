@@ -20,6 +20,15 @@ const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
+// Verify environment variables
+const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET', 'PAYSTACK_SECRET_KEY', 'TELEGRAM_BOT_TOKEN'];
+requiredEnvVars.forEach(varName => {
+  if (!process.env[varName]) {
+    console.error(`Missing required environment variable: ${varName}`);
+    process.exit(1);
+  }
+});
+
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
 console.log('Attempting to connect to MongoDB with URI:', MONGODB_URI.replace(/:([^:@]+)@/, ':****@'));
@@ -36,14 +45,32 @@ mongoose.connect(MONGODB_URI, {
   process.exit(1);
 });
 
+// MongoDB connection handling
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB disconnected, attempting to reconnect...');
+  mongoose.connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 30000,
+    retryWrites: true,
+  }).catch(err => {
+    console.error('MongoDB reconnection failed:', err.message);
+    process.exit(1);
+  });
+});
+
 // MongoDB Rate Limit Store
 const mongoStore = new MongoStore({
   uri: MONGODB_URI,
   collectionName: 'rateLimits',
   expireTimeMs: 24 * 60 * 60 * 1000, // Expire entries after 24 hours
   errorHandler: (error) => {
-    console.error('Rate limit MongoDB store error:', error.message);
+    console.error('Rate limit MongoDB store error:', {
+      message: error.message,
+      stack: error.stack,
+    });
   },
+  clientPromise: mongoose.connection.getClient(),
 });
 
 // Rate Limiters
@@ -51,9 +78,17 @@ const signupLimiter = rateLimit({
   store: mongoStore,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 40,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    console.log(`Rate limit key for signup: ${ip}`);
+    return ip;
+  },
   handler: (req, res) => {
+    console.warn(`Rate limit exceeded for signup from IP: ${req.ip}`);
     res.status(429).json({ error: 'Too many signup attempts from this IP, please try again later.' });
+  },
+  onLimitReached: (req, res, options) => {
+    console.warn(`Rate limit reached for signup: IP=${req.ip}, attempts=${options.consumedPoints}`);
   },
 });
 
@@ -61,9 +96,17 @@ const loginLimiter = rateLimit({
   store: mongoStore,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 50,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    console.log(`Rate limit key for login: ${ip}`);
+    return ip;
+  },
   handler: (req, res) => {
+    console.warn(`Rate limit exceeded for login from IP: ${req.ip}`);
     res.status(429).json({ error: 'Too many login attempts from this IP, please try again later.' });
+  },
+  onLimitReached: (req, res, options) => {
+    console.warn(`Rate limit reached for login: IP=${req.ip}, attempts=${options.consumedPoints}`);
   },
 });
 
@@ -71,7 +114,10 @@ const formSubmitLimiter = rateLimit({
   store: mongoStore,
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 50,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    return ip;
+  },
   handler: (req, res) => {
     res.status(429).json({ error: 'Too many form submissions from this IP, please try again later.' });
   },
@@ -95,7 +141,10 @@ const webhookLimiter = rateLimit({
   store: mongoStore,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 30,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    return ip;
+  },
   handler: (req, res) => {
     res.status(429).json({ error: 'Too many webhook requests from this IP, please try again later.' });
   },
@@ -105,7 +154,10 @@ const initiatePaymentLimiter = rateLimit({
   store: mongoStore,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 25,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    return ip;
+  },
   handler: (req, res) => {
     res.status(429).json({ error: 'Too many payment initiation attempts from this IP, please try again later.' });
   },
@@ -115,7 +167,10 @@ const passwordResetLimiter = rateLimit({
   store: mongoStore,
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    return ip;
+  },
   handler: (req, res) => {
     res.status(429).json({ error: 'Too many password reset attempts from this IP, please try again later.' });
   },
@@ -194,6 +249,12 @@ const telegramSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now, index: true },
 }, { timestamps: true });
 
+const passwordResetTokenSchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  token: { type: String, required: true, index: true },
+  createdAt: { type: Date, default: Date.now, expires: 3600 }, // Expire after 1 hour
+});
+
 // Create models
 const Submission = mongoose.model('Submission', submissionSchema);
 const FormConfig = mongoose.model('FormConfig', formConfigSchema);
@@ -202,6 +263,7 @@ const User = mongoose.model('User', userSchema);
 const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 const Subscription = mongoose.model('Subscription', subscriptionSchema);
 const Telegram = mongoose.model('Telegram', telegramSchema);
+const PasswordResetToken = mongoose.model('PasswordResetToken', passwordResetTokenSchema);
 
 // Initialize default admin settings
 async function initializeAdminSettings() {
@@ -234,17 +296,7 @@ mongoose.connection.once('open', async () => {
   }
 });
 
-mongoose.connection.on('error', (err) => {
-  console.error('MongoDB connection error:', err.message, err.stack);
-  process.exit(1);
-});
-
 // Initialize Telegram bot
-if (!TELEGRAM_BOT_TOKEN) {
-  console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
-  process.exit(1);
-}
-
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 bot.start(async (ctx) => {
@@ -298,6 +350,7 @@ process.on('SIGTERM', () => {
 });
 
 // Middleware
+app.set('trust proxy', 1);
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://smavo.onrender.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -314,6 +367,17 @@ app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
   res.sendStatus(200);
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+  });
+  res.status(500).json({ error: 'Internal server error', details: err.message });
 });
 
 // Utility functions
@@ -521,6 +585,10 @@ app.post('/signup', signupLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ error: 'User already exists with this email' });
@@ -534,7 +602,6 @@ app.post('/signup', signupLimiter, async (req, res) => {
       username: username || '',
       email,
       password: hashedPassword,
-      createdAt: new Date().toISOString(),
     });
 
     await newUser.save();
@@ -554,7 +621,7 @@ app.post('/login', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const user = await User.findOne({ parse });
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -584,18 +651,27 @@ app.post('/forgot-password', passwordResetLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Email not found' });
     }
 
-    res.json({ message: 'Email found, proceed to reset' });
+    const token = crypto.randomBytes(32).toString('hex');
+    await PasswordResetToken.create({
+      userId: user.id,
+      token,
+    });
+
+    // In production, send this token via email
+    console.log(`Password reset token for ${email}: ${token}`);
+    
+    res.json({ message: 'Password reset token generated. Check your email.' });
   } catch (error) {
     console.error('Forgot password error:', error);
-    res.status(500).json({ error: 'Forgot password check failed' });
+    res.status(500).json({ error: 'Forgot password request failed' });
   }
 });
 
 app.post('/reset-password', passwordResetLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and new password are required' });
+    const { email, token, password } = req.body;
+    if (!email || !token || !password) {
+      return res.status(400).json({ error: 'Email, token, and new password are required' });
     }
 
     const user = await User.findOne({ email });
@@ -603,12 +679,17 @@ app.post('/reset-password', passwordResetLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Email not found' });
     }
 
+    const resetToken = await PasswordResetToken.findOne({ userId: user.id, token });
+    if (!resetToken) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     user.password = hashedPassword;
-    user.updatedAt = new Date().toISOString();
-
     await user.save();
+
+    await PasswordResetToken.deleteOne({ _id: resetToken._id });
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
@@ -861,8 +942,8 @@ app.post('/create', authenticateToken, createFormLimiter, async (req, res) => {
       buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
       buttonMessage: req.body.buttonMessage || '',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
-      createdAt: new Date().toISOString(),
-      expiresAt: !isSubscribed && adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null,
+      createdAt: new Date(),
+      expiresAt: !isSubscribed && adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan) : null,
     };
 
     if (config.buttonAction === 'url' && config.buttonUrl && !normalizeUrl(config.buttonUrl)) {
@@ -933,9 +1014,9 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
       buttonMessage: updatedConfig.buttonMessage || existingConfig.buttonMessage || '',
       theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : existingConfig.theme || 'light',
       createdAt: existingConfig.createdAt,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(),
       expiresAt: (adminSettings.restrictionsEnabled && !isSubscribed)
-        ? new Date(new Date(existingConfig.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
+        ? new Date(new Date(existingConfig.createdAt).getTime() + adminSettings.linkLifespan)
         : null,
     };
 
@@ -1014,7 +1095,7 @@ app.post('/form/:id/submit', formSubmitLimiter, async (req, res) => {
     const submission = new Submission({
       userId,
       formId,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(),
       data: mappedData,
     });
 
@@ -1309,7 +1390,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, initiatePaymen
       return res.status(400).json({ error: `Invalid planId. Must be one of: ${allowedPlans.join(', ')}` });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       console.error('Validation failed: Invalid email format');
       return res.status(400).json({ error: 'Invalid email format' });
     }
@@ -1361,7 +1442,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, initiatePaymen
       billingPeriod: planId === 'premium-weekly' ? 'weekly' : 'monthly',
       reference,
       status: 'pending',
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     });
 
     console.log('Saving subscription:', subscription);
@@ -1404,14 +1485,14 @@ app.post('/api/subscription/webhook', webhookLimiter, verifyPaystackWebhook, asy
 
       await Subscription.updateMany(
         { userId, status: 'active', reference: { $ne: reference } },
-        { status: 'inactive', endDate: new Date().toISOString() }
+        { status: 'inactive', endDate: new Date() }
       );
 
       subscription.status = 'active';
-      subscription.startDate = new Date().toISOString();
+      subscription.startDate = new Date();
       subscription.endDate = new Date(
         Date.now() + (billingPeriod === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
-      ).toISOString();
+      );
 
       console.log('Updating subscription:', subscription);
       await subscription.save();
