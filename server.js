@@ -10,7 +10,7 @@ const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const MongoStore = require('@iroomit/rate-limit-mongodb');
+const MongoDBStore = require('@iroomit/rate-limit-mongodb');
 require('dotenv').config();
 
 const app = express();
@@ -124,7 +124,7 @@ const Subscription = mongoose.model('Subscription', subscriptionSchema);
 const Telegram = mongoose.model('Telegram', telegramSchema);
 
 // Rate limiting setup
-const mongoStore = new MongoStore({
+const mongoDBStore = new MongoDBStore({
   connectionString: MONGODB_URI,
   dbName: 'plexzora',
   collectionName: 'ratelimit',
@@ -132,7 +132,7 @@ const mongoStore = new MongoStore({
 });
 
 const limiter = rateLimit({
-  store: mongoStore,
+  store: mongoDBStore,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 30, // 30 requests per window per IP
   message: { error: 'Too many requests from this IP address. Please try again after 15 minutes.' },
