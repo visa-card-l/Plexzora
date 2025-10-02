@@ -1,23 +1,16 @@
 {
   "name": "plexzora",
   "version": "1.0.0",
-  "description": "A form submission and management application with subscription and Telegram integration",
+  "description": "A form submission and management application with authentication, subscriptions, and Telegram notifications",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-  "keywords": [
-    "express",
-    "mongoose",
-    "forms",
-    "subscription",
-    "telegram"
-  ],
+  "keywords": ["express", "mongoose", "forms", "authentication", "subscriptions"],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@iroomit/rate-limit-mongodb": "^1.0.0",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
@@ -25,15 +18,13 @@
     "dotenv": "^16.3.1",
     "ejs": "^3.1.9",
     "express": "^4.18.2",
-    "express-rate-limit": "^6.10.0",
+    "express-rate-limit": "^7.1.5",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^7.5.0",
-    "telegraf": "^4.15.0"
+    "mongoose": "^8.0.0",
+    "rate-limit-mongo": "^6.0.0",
+    "telegraf": "^4.15.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
-  },
-  "engines": {
-    "node": ">=14.0.0"
   }
 }
