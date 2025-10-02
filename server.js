@@ -10,7 +10,7 @@ const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const MongoStore = require('rate-limit-mongo');
+const MongoStore = require('@iroomit/rate-limit-mongodb');
 require('dotenv').config();
 
 const app = express();
@@ -125,8 +125,10 @@ const Telegram = mongoose.model('Telegram', telegramSchema);
 
 // Rate limiting setup
 const mongoStore = new MongoStore({
-  uri: MONGODB_URI,
+  connectionString: MONGODB_URI,
+  dbName: 'plexzora',
   collectionName: 'ratelimit',
+  expireAfterSeconds: 900,
 });
 
 const limiter = rateLimit({
