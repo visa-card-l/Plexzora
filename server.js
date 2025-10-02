@@ -125,8 +125,7 @@ const Telegram = mongoose.model('Telegram', telegramSchema);
 
 // Rate limiting setup
 const mongoStore = new MongoStore({
-  connectionString: MONGODB_URI,
-  dbName: 'plexzora',
+  uri: MONGODB_URI,
   collectionName: 'ratelimit',
 });
 
