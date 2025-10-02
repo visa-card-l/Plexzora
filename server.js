@@ -10,7 +10,7 @@ const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const MongoDBStore = require('@iroomit/rate-limit-mongodb');
+const MongoStore = require('rate-limit-mongo');
 require('dotenv').config();
 
 const app = express();
@@ -39,6 +39,24 @@ mongoose.connect(MONGODB_URI, {
 }).catch(err => {
   console.error('MongoDB connection error:', err.message, err.stack);
   process.exit(1);
+});
+
+// Rate limit store
+const rateLimitStore = new MongoStore({
+  connectionString: MONGODB_URI,
+  dbName: 'plexzora',
+  collectionName: 'rateLimits',
+  expireTimeMs: 15 * 60 * 1000, // TTL for 15 minutes
+});
+
+// Auth rate limiter
+const authLimiter = rateLimit({
+  store: rateLimitStore,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per IP
+  message: { success: false, message: "Too many attempts. Try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Mongoose Schemas
@@ -122,23 +140,6 @@ const User = mongoose.model('User', userSchema);
 const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 const Subscription = mongoose.model('Subscription', subscriptionSchema);
 const Telegram = mongoose.model('Telegram', telegramSchema);
-
-// Rate limiting setup
-const mongoDBStore = new MongoDBStore({
-  connectionString: MONGODB_URI,
-  dbName: 'plexzora',
-  collectionName: 'ratelimit',
-  expireAfterSeconds: 900,
-});
-
-const limiter = rateLimit({
-  store: mongoDBStore,
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // 30 requests per window per IP
-  message: { error: 'Too many requests from this IP address. Please try again after 15 minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 // Initialize default admin settings
 async function initializeAdminSettings() {
@@ -230,7 +231,6 @@ process.on('SIGTERM', () => {
 });
 
 // Middleware
-app.set('trust proxy', 1);
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://smavo.onrender.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -424,7 +424,7 @@ app.get('/user', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/signup', limiter, async (req, res) => {
+app.post('/signup', authLimiter, async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!email || !password) {
@@ -457,7 +457,7 @@ app.post('/signup', limiter, async (req, res) => {
   }
 });
 
-app.post('/login', limiter, async (req, res) => {
+app.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -876,7 +876,7 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/form/:id/submit', limiter, async (req, res) => {
+app.post('/form/:id/submit', authLimiter, async (req, res) => {
   const formId = req.params.id;
 
   const config = await FormConfig.findOne({ formId });
