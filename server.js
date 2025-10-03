@@ -19,6 +19,8 @@ const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
+app.set('trust proxy', 1);
+
 if (!TELEGRAM_BOT_TOKEN) {
   console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
   process.exit(1);
