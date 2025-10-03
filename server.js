@@ -10,7 +10,6 @@ const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const MongoStore = require('rate-limit-mongo');
 require('dotenv').config();
 
 const app = express();
@@ -24,6 +23,13 @@ if (!TELEGRAM_BOT_TOKEN) {
   console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
   process.exit(1);
 }
+
+const limiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 15, // limit each IP to 15 requests per windowMs
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
@@ -39,24 +45,6 @@ mongoose.connect(MONGODB_URI, {
 }).catch(err => {
   console.error('MongoDB connection error:', err.message, err.stack);
   process.exit(1);
-});
-
-// Rate limit store
-const rateLimitStore = new MongoStore({
-  connectionString: MONGODB_URI,
-  dbName: 'plexzora',
-  collectionName: 'rateLimits',
-  expireTimeMs: 15 * 60 * 1000, // TTL for 15 minutes
-});
-
-// Auth rate limiter
-const authLimiter = rateLimit({
-  store: rateLimitStore,
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 requests per IP
-  message: { success: false, message: "Too many attempts. Try again later." },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // Mongoose Schemas
@@ -424,7 +412,7 @@ app.get('/user', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/signup', authLimiter, async (req, res) => {
+app.post('/signup', limiter, async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!email || !password) {
@@ -457,7 +445,7 @@ app.post('/signup', authLimiter, async (req, res) => {
   }
 });
 
-app.post('/login', authLimiter, async (req, res) => {
+app.post('/login', limiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -876,7 +864,7 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/form/:id/submit', authLimiter, async (req, res) => {
+app.post('/form/:id/submit', limiter, async (req, res) => {
   const formId = req.params.id;
 
   const config = await FormConfig.findOne({ formId });
