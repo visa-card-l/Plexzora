@@ -33,6 +33,17 @@ const limiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 
+// Specific rate limiter for forgot password and reset password routes
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per windowMs
+  message: {
+    error: 'Too many forgot password attempts from this IP. Please try again after 15 minutes.',
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/plexzora';
 console.log('Attempting to connect to MongoDB with URI:', MONGODB_URI.replace(/:([^:@]+)@/, ':****@'));
@@ -472,7 +483,7 @@ app.post('/login', limiter, async (req, res) => {
   }
 });
 
-app.post('/forgot-password', async (req, res) => {
+app.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
@@ -491,7 +502,7 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
-app.post('/reset-password', async (req, res) => {
+app.post('/reset-password', forgotPasswordLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -739,14 +750,7 @@ app.post('/create', authenticateToken, async (req, res) => {
 
     const isSubscribed = await hasActiveSubscription(userId);
 
-    if (isSubscribed) {
-      // Limit for paid users: 50 forms per day
-      const userFormCountToday = await countUserFormsToday(userId);
-      if (userFormCountToday >= 50) {
-        return res.status(403).json({ error: 'Maximum form limit (50 per day) for paid users reached' });
-      }
-    } else if (adminSettings.restrictionsEnabled) {
-      // Existing limit for free users
+    if (!isSubscribed && adminSettings.restrictionsEnabled) {
       const userFormCountToday = await countUserFormsToday(userId);
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
         return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
