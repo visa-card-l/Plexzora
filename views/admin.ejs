@@ -94,6 +94,10 @@
         <input type="number" id="maxFormsPerUserPerDay" name="maxFormsPerUserPerDay" value="<%= maxFormsPerUserPerDay || 10 %>" min="1" required>
       </div>
       <div class="form-group">
+        <label for="maxFormsPer6HoursForSubscribers">Max Forms Per 6 Hours For Subscribers</label>
+        <input type="number" id="maxFormsPer6HoursForSubscribers" name="maxFormsPer6HoursForSubscribers" value="<%= maxFormsPer6HoursForSubscribers || 50 %>" min="1" required>
+      </div>
+      <div class="form-group">
         <label for="adminPassword">Admin Password</label>
         <input type="password" id="adminPassword" name="adminPassword" required>
       </div>
@@ -109,6 +113,7 @@
         linkLifespanValue: document.getElementById('linkLifespanValue').value,
         linkLifespanUnit: document.getElementById('linkLifespanUnit').value,
         maxFormsPerUserPerDay: document.getElementById('maxFormsPerUserPerDay').value,
+        maxFormsPer6HoursForSubscribers: document.getElementById('maxFormsPer6HoursForSubscribers').value,
         adminPassword: document.getElementById('adminPassword').value
       };
 
