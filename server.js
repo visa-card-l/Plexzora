@@ -333,6 +333,16 @@ async function countUserFormsToday(userId) {
   return count;
 }
 
+async function countUserFormsLast6Hours(userId) {
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours ago in ms
+  const count = await FormCreation.countDocuments({
+    userId,
+    createdAt: { $gte: sixHoursAgo },
+  });
+  console.log(`Counted ${count} forms created in last 6 hours for user ${userId}`);
+  return count;
+}
+
 async function getUserCount() {
   return await User.countDocuments();
 }
@@ -750,10 +760,19 @@ app.post('/create', authenticateToken, async (req, res) => {
 
     const isSubscribed = await hasActiveSubscription(userId);
 
+    // Existing free-user limit check (unchanged)
     if (!isSubscribed && adminSettings.restrictionsEnabled) {
       const userFormCountToday = await countUserFormsToday(userId);
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
         return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
+      }
+    }
+
+    // New paid-user limit check (50 forms per 6 hours, rolling window)
+    if (isSubscribed) {
+      const userFormCountLast6Hours = await countUserFormsLast6Hours(userId);
+      if (userFormCountLast6Hours >= 50) {
+        return res.status(403).json({ error: 'Form could not be created' });
       }
     }
 
