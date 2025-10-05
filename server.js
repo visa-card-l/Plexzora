@@ -781,7 +781,7 @@ app.post('/create', authenticateToken, async (req, res) => {
       const userFormCountLast6Hours = await countUserFormsLast6Hours(userId);
       const maxFormsPer6Hours = adminSettings.maxFormsPer6HoursForSubscribers || 50;
       if (userFormCountLast6Hours >= maxFormsPer6Hours) {
-        return res.status(403).json({ error: `Maximum form limit (${maxFormsPer6Hours} per 6 hours) reached for subscribers` });
+        return res.status(403).json({ error: `form creation failed` });
       }
     }
 
