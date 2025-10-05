@@ -110,6 +110,7 @@ const adminSettingsSchema = new mongoose.Schema({
   linkLifespanValue: Number,
   linkLifespanUnit: String,
   maxFormsPerUserPerDay: Number,
+  maxFormsPer6HoursForSubscribers: Number,
   restrictionsEnabled: { type: Boolean, default: true },
 }, { timestamps: true });
 
@@ -152,6 +153,7 @@ async function initializeAdminSettings() {
         linkLifespanValue: 7,
         linkLifespanUnit: 'days',
         maxFormsPerUserPerDay: 10,
+        maxFormsPer6HoursForSubscribers: 50,
         restrictionsEnabled: true,
       });
       console.log('Created default admin settings');
@@ -558,6 +560,7 @@ app.get('/admin', async (req, res) => {
       linkLifespanValue: adminSettings.linkLifespanValue,
       linkLifespanUnit: adminSettings.linkLifespanUnit,
       maxFormsPerUserPerDay: adminSettings.maxFormsPerUserPerDay,
+      maxFormsPer6HoursForSubscribers: adminSettings.maxFormsPer6HoursForSubscribers,
     });
   } catch (error) {
     console.error('Error rendering admin page:', error.message, error.stack);
@@ -567,11 +570,11 @@ app.get('/admin', async (req, res) => {
 
 app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
   try {
-    const { linkLifespanValue, linkLifespanUnit, maxFormsPerUserPerDay, restrictionsEnabled } = req.body;
+    const { linkLifespanValue, linkLifespanUnit, maxFormsPerUserPerDay, maxFormsPer6HoursForSubscribers, restrictionsEnabled } = req.body;
 
     if (restrictionsEnabled) {
-      if (!linkLifespanValue || !linkLifespanUnit || !maxFormsPerUserPerDay) {
-        return res.status(400).json({ error: 'Link lifespan value, unit, and max forms per user per day are required when restrictions are enabled' });
+      if (!linkLifespanValue || !linkLifespanUnit || !maxFormsPerUserPerDay || !maxFormsPer6HoursForSubscribers) {
+        return res.status(400).json({ error: 'Link lifespan value, unit, max forms per user per day, and max forms per 6 hours for subscribers are required when restrictions are enabled' });
       }
 
       if (!Number.isInteger(Number(linkLifespanValue)) || Number(linkLifespanValue) <= 0) {
@@ -584,6 +587,10 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
 
       if (!Number.isInteger(Number(maxFormsPerUserPerDay)) || Number(maxFormsPerUserPerDay) <= 0) {
         return res.status(400).json({ error: 'Max forms per user per day must be a positive integer' });
+      }
+
+      if (!Number.isInteger(Number(maxFormsPer6HoursForSubscribers)) || Number(maxFormsPer6HoursForSubscribers) <= 0) {
+        return res.status(400).json({ error: 'Max forms per 6 hours for subscribers must be a positive integer' });
       }
     }
 
@@ -613,6 +620,7 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
       linkLifespanValue: restrictionsEnabled ? Number(linkLifespanValue) : null,
       linkLifespanUnit: restrictionsEnabled ? linkLifespanUnit : null,
       maxFormsPerUserPerDay: restrictionsEnabled ? Number(maxFormsPerUserPerDay) : null,
+      maxFormsPer6HoursForSubscribers: restrictionsEnabled ? Number(maxFormsPer6HoursForSubscribers) : null,
       restrictionsEnabled: !!restrictionsEnabled,
     };
 
@@ -768,11 +776,12 @@ app.post('/create', authenticateToken, async (req, res) => {
       }
     }
 
-    // New paid-user limit check (50 forms per 6 hours, rolling window)
-    if (isSubscribed) {
+    // Updated paid-user limit check (dynamic forms per 6 hours, rolling window)
+    if (isSubscribed && adminSettings.restrictionsEnabled) {
       const userFormCountLast6Hours = await countUserFormsLast6Hours(userId);
-      if (userFormCountLast6Hours >= 50) {
-        return res.status(403).json({ error: 'Form could not be created' });
+      const maxFormsPer6Hours = adminSettings.maxFormsPer6HoursForSubscribers || 50;
+      if (userFormCountLast6Hours >= maxFormsPer6Hours) {
+        return res.status(403).json({ error: `Maximum form limit (${maxFormsPer6Hours} per 6 hours) reached for subscribers` });
       }
     }
 
