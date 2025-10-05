@@ -739,7 +739,14 @@ app.post('/create', authenticateToken, async (req, res) => {
 
     const isSubscribed = await hasActiveSubscription(userId);
 
-    if (!isSubscribed && adminSettings.restrictionsEnabled) {
+    if (isSubscribed) {
+      // Limit for paid users: 50 forms per day
+      const userFormCountToday = await countUserFormsToday(userId);
+      if (userFormCountToday >= 50) {
+        return res.status(403).json({ error: 'Maximum form limit (50 per day) for paid users reached' });
+      }
+    } else if (adminSettings.restrictionsEnabled) {
+      // Existing limit for free users
       const userFormCountToday = await countUserFormsToday(userId);
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
         return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
