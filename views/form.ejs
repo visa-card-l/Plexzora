@@ -9,7 +9,7 @@
   <style>
     body {
       font-family: 'Inter', sans-serif;
-      background: <%= theme === 'dark' ? '#1a1f2e' : '#f8f9fa' %>;
+      background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -21,10 +21,9 @@
       transition: background 0.3s ease;
     }
     .login-container {
-      background: <%= theme === 'dark' ? '#2f3b5a' : 'white' %>;
+      background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
       padding: 24px;
       border-radius: 16px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, <%= theme === 'dark' ? '0.3' : '0.1' %>);
       width: 100%;
       max-width: 400px;
       min-height: <%= minHeight %>;
@@ -41,7 +40,6 @@
     }
     .login-container:hover {
       transform: scale(1.02);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
     }
     .login-container h2 {
       font-size: 2rem;
@@ -50,7 +48,7 @@
       margin: 16px 0 16px;
     }
     .login-container p {
-      font-size: 1.2rem;
+      font-size: 1rem;
       font-weight: 400;
       color: <%= subheaderColor %>;
       margin: 0 0 0px;
@@ -90,21 +88,21 @@
       box-sizing: border-box;
       transition: all 0.2s ease;
       border: none;
-      background: <%= theme === 'dark' ? '#3b4a6b' : '#f8f9fa' %>;
-      color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
+      background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
+      color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
       display: block;
     }
     .login-container input::placeholder {
-      color: <%= theme === 'dark' ? '#b0b8cc' : '#999999' %>;
+      color: <%= theme === 'dark' ? '#cccccc' : '#666666' %>;
       opacity: 1;
     }
     .login-container input:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(0, 183, 255, 0.3);
-      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
+      background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
     }
     .login-container input:not(:placeholder-shown) {
-      background: <%= theme === 'dark' ? '#3b4a6b' : '#ffffff' %>;
+      background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
     }
     .login-container button {
       width: 100%;
@@ -120,7 +118,6 @@
       border: none;
       cursor: pointer;
       font-weight: 500;
-      box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3);
       position: relative;
       display: flex;
       align-items: center;
@@ -129,14 +126,12 @@
     }
     .login-container button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 183, 255, 0.5);
       background: <%= buttonColor.includes('linear-gradient') ? 'linear-gradient(45deg, #0078ff, #005bb5)' : buttonColor %>;
     }
     .login-container button:disabled {
       opacity: 1; /* Prevent fading */
       cursor: not-allowed;
       background: <%= buttonColor %>; /* Retain original background color */
-      box-shadow: 0 2px 8px rgba(0, 183, 255, 0.3); /* Maintain shadow */
     }
     .login-container button.loading {
       background: <%= buttonColor %>; /* Retain original background during loading */
@@ -172,7 +167,7 @@
       top: 50%;
       transform: translateY(-50%);
       cursor: pointer;
-      color: <%= theme === 'dark' ? '#b0b8cc' : '#555555' %>;
+      color: <%= theme === 'dark' ? '#cccccc' : '#555555' %>;
       font-size: 1rem;
       transition: color 0.2s ease;
       z-index: 1;
@@ -186,10 +181,9 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%) scale(0.8);
-      background: <%= theme === 'dark' ? '#2f3b5a' : '#ffffff' %>;
+      background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
       padding: 20px;
       border-radius: 12px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, <%= theme === 'dark' ? '0.4' : '0.15' %>);
       z-index: 1000;
       text-align: center;
       max-width: 300px;
@@ -205,12 +199,12 @@
     .popup h4 {
       font-size: 1rem;
       font-weight: 600;
-      color: <%= theme === 'dark' ? '#f8f9fa' : '#333333' %>;
+      color: <%= theme === 'dark' ? '#ffffff' : '#000000' %>;
       margin-bottom: 12px;
     }
     .popup p {
       font-size: 0.85rem;
-      color: <%= theme === 'dark' ? '#d1d5db' : '#555555' %>;
+      color: <%= theme === 'dark' ? '#cccccc' : '#666666' %>;
       margin-bottom: 12px;
       line-height: 1.4;
     }
@@ -221,7 +215,7 @@
       background: none;
       border: none;
       font-size: 0.85rem;
-      color: <%= theme === 'dark' ? '#f8f9fa' : '#555555' %>;
+      color: <%= theme === 'dark' ? '#cccccc' : '#555555' %>;
       cursor: pointer;
       transition: color 0.2s ease;
     }
@@ -261,7 +255,7 @@
         margin: 16px 0 16px;
       }
       .login-container p {
-        font-size: 1.1rem;
+        font-size: 0.95rem;
         margin: 0 0 0px;
       }
       .login-container input, .login-container button {
@@ -292,7 +286,7 @@
         margin: 16px 0 16px;
       }
       .login-container p {
-        font-size: 1rem;
+        font-size: 0.85rem;
         margin: 0 0 0px;
       }
       .login-container input, .login-container button {
