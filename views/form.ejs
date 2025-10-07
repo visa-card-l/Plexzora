@@ -12,17 +12,17 @@
       background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: flex-start;
       align-items: center;
       min-height: 100vh;
       margin: 0;
-      padding: 40px 20px 20px;
+      padding: 20px 20px 20px;
       box-sizing: border-box;
       transition: background 0.3s ease;
     }
     .login-container {
       background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
-      padding: 24px;
+      padding: 32px;
       border-radius: 16px;
       width: 100%;
       max-width: 400px;
@@ -81,10 +81,10 @@
     }
     .login-container input {
       width: 100%;
-      padding: 20px 40px 20px 14px;
+      padding: 24px 48px 24px 16px;
       margin: 16px 0;
       border-radius: 8px;
-      font-size: 0.95rem;
+      font-size: 1rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
       border: none;
@@ -107,7 +107,7 @@
     .login-container button {
       width: 100%;
       max-width: 400px;
-      padding: 16px;
+      padding: 20px;
       margin: 0;
       border-radius: 50px;
       font-size: 0.95rem;
@@ -163,7 +163,7 @@
     }
     .toggle-password {
       position: absolute;
-      right: 14px;
+      right: 16px;
       top: 50%;
       transform: translateY(-50%);
       cursor: pointer;
@@ -240,11 +240,11 @@
     }
     @media (max-width: 768px) {
       body {
-        padding: 30px 16px 16px;
+        padding: 10px 16px 16px;
       }
       .login-container {
         max-width: 320px;
-        padding: 20px;
+        padding: 24px;
       }
       .form-fields {
         max-width: 100%;
@@ -259,11 +259,11 @@
         margin: 0 0 0px;
       }
       .login-container input, .login-container button {
-        padding: 16px 40px 16px 12px;
+        padding: 20px 48px 20px 12px;
         font-size: 0.9rem;
       }
       .login-container button {
-        padding: 14px;
+        padding: 18px;
         border-radius: 50px;
         margin: 0;
       }
@@ -290,11 +290,11 @@
         margin: 0 0 0px;
       }
       .login-container input, .login-container button {
-        padding: 14px 40px 14px 10px;
+        padding: 18px 48px 18px 10px;
         font-size: 0.85rem;
       }
       .login-container button {
-        padding: 12px;
+        padding: 16px;
         border-radius: 50px;
         margin: 0;
       }
