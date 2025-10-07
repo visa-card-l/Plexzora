@@ -24,7 +24,7 @@
     }
     .login-container {
       background: <%= theme === 'dark' ? '#000000' : '#ffffff' %>;
-      padding: 32px;
+      padding: 32px 16px;
       border-radius: 16px;
       width: 100%;
       max-width: 600px;
@@ -237,11 +237,11 @@
     }
     @media (max-width: 768px) {
       body {
-        padding: 30px 5px 16px;
+        padding: 30px 4px 16px;
       }
       .login-container {
         max-width: 100%;
-        padding: 24px;
+        padding: 24px 12px;
       }
       .form-fields {
         max-width: 100%;
@@ -271,8 +271,13 @@
       }
     }
     @media (max-width: 480px) {
+      body {
+        padding: 20px 2px 10px;
+      }
       .login-container {
         max-width: 100%;
+        padding: 20px 8px;
+        border-radius: 0;
       }
       .form-fields {
         max-width: 100%;
@@ -289,6 +294,7 @@
       .login-container input, .login-container button {
         padding: 18px 48px 18px 10px;
         font-size: 0.85rem;
+        border-radius: 8px;
       }
       .login-container button {
         padding: 16px;
