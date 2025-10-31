@@ -956,29 +956,32 @@ app.post('/form/:id/submit', limiter, async (req, res) => {
     await submission.save();
     console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
 
-    try {
-      const subscription = await Subscription.findOne({
-        userId,
-        status: 'active',
-        endDate: { $gt: new Date() },
-      });
-      if (subscription) {
-        const telegram = await Telegram.findOne({ userId });
-        if (telegram && telegram.chatId) {
-          const notificationMessage = `New submission received for form ${formId}:\n${Object.entries(mappedData)
-            .map(([key, value]) => `${key}: ${value}`)
-            .join('\n')}`;
-          await bot.telegram.sendMessage(telegram.chatId, notificationMessage);
-          console.log(`Sent Telegram notification to chatId ${telegram.chatId} for user ${userId}`);
+    // Fire Telegram notification asynchronously without awaiting
+    (async () => {
+      try {
+        const subscription = await Subscription.findOne({
+          userId,
+          status: 'active',
+          endDate: { $gt: new Date() },
+        });
+        if (subscription) {
+          const telegram = await Telegram.findOne({ userId });
+          if (telegram && telegram.chatId) {
+            const notificationMessage = `New submission received for form ${formId}:\n${Object.entries(mappedData)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join('\n')}`;
+            await bot.telegram.sendMessage(telegram.chatId, notificationMessage);
+            console.log(`Sent Telegram notification to chatId ${telegram.chatId} for user ${userId}`);
+          } else {
+            console.log(`No Telegram chatId found for user ${userId}, skipping notification`);
+          }
         } else {
-          console.log(`No Telegram chatId found for user ${userId}, skipping notification`);
+          console.log(`User ${userId} is not subscribed, skipping Telegram notification`);
         }
-      } else {
-        console.log(`User ${userId} is not subscribed, skipping Telegram notification`);
+      } catch (telegramError) {
+        console.error('Background Telegram notification failed:', telegramError.message);
       }
-    } catch (telegramError) {
-      console.error('Error sending Telegram notification:', telegramError.message);
-    }
+    })();
 
     res.status(200).json({ message: 'Submission saved successfully' });
   } catch (error) {
