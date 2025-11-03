@@ -86,6 +86,11 @@ const formConfigSchema = new mongoose.Schema({
   buttonAction: String,
   buttonUrl: String,
   buttonMessage: String,
+  forgotText: String,
+  forgotUrl: String,
+  signupText: String,
+  signupUrl: String,
+  footerLinkColor: String,
   theme: String,
   createdAt: { type: Date, default: Date.now, index: true },
   expiresAt: { type: Date, index: true },
@@ -807,6 +812,11 @@ app.post('/create', authenticateToken, async (req, res) => {
       buttonAction: validActions.includes(req.body.buttonAction) ? req.body.buttonAction : 'url',
       buttonUrl: req.body.buttonUrl ? normalizeUrl(req.body.buttonUrl) : '',
       buttonMessage: req.body.buttonMessage || '',
+      forgotText: req.body.forgotText || '',
+      forgotUrl: req.body.forgotUrl ? normalizeUrl(req.body.forgotUrl) : '',
+      signupText: req.body.signupText || '',
+      signupUrl: req.body.signupUrl ? normalizeUrl(req.body.signupUrl) : '',
+      footerLinkColor: req.body.footerLinkColor || '#0078ff',
       theme: req.body.theme === 'dark' ? 'dark' : 'light',
       createdAt: new Date().toISOString(),
       expiresAt: !isSubscribed && adminSettings.restrictionsEnabled ? new Date(Date.now() + adminSettings.linkLifespan).toISOString() : null,
@@ -875,6 +885,11 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
       buttonAction: validActions.includes(updatedConfig.buttonAction) ? updatedConfig.buttonAction : existingConfig.buttonAction || 'url',
       buttonUrl: updatedConfig.buttonUrl ? normalizeUrl(updatedConfig.buttonUrl) : existingConfig.buttonUrl || '',
       buttonMessage: updatedConfig.buttonMessage || existingConfig.buttonMessage || '',
+      forgotText: updatedConfig.forgotText !== undefined ? updatedConfig.forgotText : existingConfig.forgotText || '',
+      forgotUrl: updatedConfig.forgotUrl ? normalizeUrl(updatedConfig.forgotUrl) : existingConfig.forgotUrl || '',
+      signupText: updatedConfig.signupText !== undefined ? updatedConfig.signupText : existingConfig.signupText || '',
+      signupUrl: updatedConfig.signupUrl ? normalizeUrl(updatedConfig.signupUrl) : existingConfig.signupUrl || '',
+      footerLinkColor: updatedConfig.footerLinkColor !== undefined ? updatedConfig.footerLinkColor : existingConfig.footerLinkColor || '#0078ff',
       theme: updatedConfig.theme === 'dark' ? 'dark' : updatedConfig.theme === 'light' ? 'light' : existingConfig.theme || 'light',
       createdAt: existingConfig.createdAt,
       updatedAt: new Date().toISOString(),
@@ -1175,6 +1190,12 @@ app.get('/form/:id', async (req, res) => {
     return `<span style="color: ${sanitizeForJs(color)}">${sanitizeForJs(char)}</span>`;
   }).join('');
 
+  const forgotText = config.forgotText || (config.template === 'sign-in' ? 'Forgot Password?' : '');
+  const forgotUrl = config.forgotUrl || '#';
+  const signupText = config.signupText || (config.template === 'sign-in' ? 'Sign Up' : '');
+  const signupUrl = config.signupUrl || '#';
+  const footerLinkColor = config.footerLinkColor || '#0078ff';
+
   try {
     res.render('form', {
       templateName: sanitizeForJs(template.name),
@@ -1189,6 +1210,11 @@ app.get('/form/:id', async (req, res) => {
       buttonAction: sanitizeForJs(config.buttonAction),
       buttonUrl: sanitizeForJs(config.buttonUrl || ''),
       buttonMessage: sanitizeForJs(config.buttonMessage || ''),
+      forgotText: sanitizeForJs(forgotText),
+      forgotUrl: sanitizeForJs(forgotUrl),
+      signupText: sanitizeForJs(signupText),
+      signupUrl: sanitizeForJs(signupUrl),
+      footerLinkColor: sanitizeForJs(footerLinkColor),
       theme: config.theme,
       minHeight,
       template: config.template,
@@ -1378,4 +1404,3 @@ app.listen(port, () => {
   console.error('Server startup error:', error.message, error.stack);
   process.exit(1);
 });
-
