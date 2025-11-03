@@ -235,6 +235,30 @@
       display: block;
       opacity: 1;
     }
+    #footer-links {
+      margin-top: 20px;
+      text-align: center;
+      width: 100%;
+    }
+    #forgot-container {
+      margin-top: 10px;
+      text-align: center;
+    }
+    #signup-container {
+      margin: 20px 0 0 0;
+      font-size: 0.9rem;
+      color: <%= theme === 'dark' ? '#d1d5db' : '#555555' %>;
+      text-align: center;
+    }
+    #footer-links a {
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: color 0.2s ease;
+      color: <%= footerLinkColor %>;
+    }
+    #footer-links a:hover {
+      text-decoration: underline;
+    }
     @media (max-width: 768px) {
       body {
         padding: 30px 5px 16px;
@@ -321,6 +345,20 @@
         <div class="spinner"></div>
       </button>
     </div>
+    <% if (template === 'sign-in') { %>
+      <div id="footer-links">
+        <% if (forgotText) { %>
+          <div id="forgot-container">
+            <a href="<%= forgotUrl %>" id="forgot-link"><%= forgotText %></a>
+          </div>
+        <% } %>
+        <% if (signupText) { %>
+          <p id="signup-container">
+            <a href="<%= signupUrl %>" id="signup-link"><%= signupText %></a>
+          </p>
+        <% } %>
+      </div>
+    <% } %>
   </div>
   <div class="overlay" id="message-overlay"></div>
   <div class="popup" id="message-popup" role="alertdialog" aria-labelledby="message-popup-title">
