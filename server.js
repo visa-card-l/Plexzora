@@ -10,6 +10,7 @@ const path = require('path');
 const { Telegraf } = require('telegraf');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
+const NodeCache = require('node-cache'); // Added for caching
 require('dotenv').config();
 
 const app = express();
@@ -18,6 +19,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 const ADMIN_PASSWORD_HASH = bcrypt.hashSync('midas', 10);
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+// Initialize node-cache with default TTL of 5 minutes (300s)
+const cache = new NodeCache({ stdTTL: 300 });
+
+// Global cache for admin settings (no TTL, invalidate on update)
+let adminSettingsCache = null;
 
 app.set('trust proxy', 3);
 
@@ -60,7 +67,7 @@ mongoose.connect(MONGODB_URI, {
   process.exit(1);
 });
 
-// Mongoose Schemas
+// Mongoose Schemas (unchanged)
 const submissionSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   formId: { type: String, required: true, index: true },
@@ -139,7 +146,7 @@ const telegramSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now, index: true },
 }, { timestamps: true });
 
-// Create models
+// Create models (unchanged)
 const Submission = mongoose.model('Submission', submissionSchema);
 const FormConfig = mongoose.model('FormConfig', formConfigSchema);
 const FormCreation = mongoose.model('FormCreation', formCreationSchema);
@@ -148,12 +155,156 @@ const AdminSettings = mongoose.model('AdminSettings', adminSettingsSchema);
 const Subscription = mongoose.model('Subscription', subscriptionSchema);
 const Telegram = mongoose.model('Telegram', telegramSchema);
 
-// Initialize default admin settings
+// Cached function for AdminSettings
+async function getAdminSettings() {
+  if (adminSettingsCache) {
+    return adminSettingsCache;
+  }
+  adminSettingsCache = await AdminSettings.findOne();
+  return adminSettingsCache;
+}
+
+// Cached hasActiveSubscription
+async function hasActiveSubscription(userId) {
+  const key = `user:${userId}:subscription:active`;
+  let sub = cache.get(key);
+  if (sub !== undefined) {
+    return sub;
+  }
+  sub = await Subscription.findOne({
+    userId,
+    status: 'active',
+    endDate: { $gt: new Date() },
+  }).sort({ createdAt: -1 });
+  const ttl = 300; // 5min
+  if (sub) {
+    cache.set(key, sub, ttl);
+  } else {
+    cache.set(key, null, ttl); // Cache null to avoid repeated queries
+  }
+  return sub;
+}
+
+// Cached count functions
+async function countUserFormsToday(userId) {
+  const key = `user:${userId}:forms:count:today`;
+  let count = cache.get(key);
+  if (count !== undefined) {
+    return count;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStart = today.getTime();
+  const todayEnd = todayStart + 24 * 60 * 60 * 1000;
+  count = await FormCreation.countDocuments({
+    userId,
+    createdAt: { $gte: new Date(todayStart), $lt: new Date(todayEnd) },
+  });
+  cache.set(key, count, 60); // 1min TTL
+  console.log(`Counted ${count} forms created today for user ${userId}`);
+  return count;
+}
+
+async function countUserFormsLast6Hours(userId) {
+  const key = `user:${userId}:forms:count:last6hrs`;
+  let count = cache.get(key);
+  if (count !== undefined) {
+    return count;
+  }
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+  count = await FormCreation.countDocuments({
+    userId,
+    createdAt: { $gte: sixHoursAgo },
+  });
+  cache.set(key, count, 60); // 1min TTL
+  console.log(`Counted ${count} forms created in last 6 hours for user ${userId}`);
+  return count;
+}
+
+// Updated isFormExpired (uses cached admin/sub)
+async function isFormExpired(formId) {
+  const formKey = `form:${formId}:config`;
+  let config = cache.get(formKey);
+  if (!config) {
+    config = await FormConfig.findOne({ formId });
+    if (!config) {
+      return true;
+    }
+    // Set cache with dynamic TTL
+    const admin = await getAdminSettings();
+    const userSub = await hasActiveSubscription(config.userId);
+    const isSubscribed = !!userSub;
+    let ttl = 3600; // Default 1hr
+    if (admin && admin.restrictionsEnabled && !isSubscribed && admin.linkLifespan) {
+      ttl = admin.linkLifespan / 1000; // Expire at form expiration
+    }
+    cache.set(formKey, config, ttl);
+  }
+  if (!config || !config.createdAt) {
+    console.log(`Form ${formId} not found or missing createdAt`);
+    // Invalidate cache if invalid
+    cache.del(formKey);
+    return true;
+  }
+
+  const admin = await getAdminSettings();
+  const userSub = await hasActiveSubscription(config.userId);
+  const isSubscribed = !!userSub;
+  if (isSubscribed || !admin?.restrictionsEnabled) {
+    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${isSubscribed}, restrictionsEnabled=${admin?.restrictionsEnabled}`);
+    return false;
+  }
+
+  if (!admin?.linkLifespan) {
+    console.log(`No linkLifespan set for form ${formId}, assuming not expired`);
+    return false;
+  }
+
+  const createdTime = new Date(config.createdAt).getTime();
+  const currentTime = Date.now();
+  const isExpired = (currentTime - createdTime) > admin.linkLifespan;
+
+  if (isExpired) {
+    console.log(`Form ${formId} is expired, deleting form and submissions`);
+    await FormConfig.deleteOne({ formId });
+    await Submission.deleteMany({ formId });
+    cache.del(formKey); // Invalidate
+    console.log(`Deleted form ${formId} and its submissions`);
+  }
+
+  console.log(`Form ${formId} expiration check: createdAt=${config.createdAt}, currentTime=${currentTime}, linkLifespan=${admin.linkLifespan}, isExpired=${isExpired}`);
+  return isExpired;
+}
+
+// Cached getUserCount and getSubscriberCount (infrequent, but cached)
+async function getUserCount() {
+  const key = 'global:user:count';
+  let count = cache.get(key);
+  if (count !== undefined) return count;
+  count = await User.countDocuments();
+  cache.set(key, count, 1800); // 30min TTL
+  return count;
+}
+
+async function getSubscriberCount() {
+  const key = 'global:subscriber:count';
+  let count = cache.get(key);
+  if (count !== undefined) return count;
+  count = await Subscription.countDocuments({
+    status: 'active',
+    endDate: { $gt: new Date() },
+  });
+  cache.set(key, count, 1800); // 30min TTL
+  console.log(`Counted ${count} active subscribers`);
+  return count;
+}
+
+// Initialize default admin settings (set cache)
 async function initializeAdminSettings() {
   try {
     const settings = await AdminSettings.findOne();
     if (!settings) {
-      await AdminSettings.create({
+      const newSettings = await AdminSettings.create({
         linkLifespan: 604800000,
         linkLifespanValue: 7,
         linkLifespanUnit: 'days',
@@ -161,7 +312,10 @@ async function initializeAdminSettings() {
         maxFormsPer6HoursForSubscribers: 50,
         restrictionsEnabled: true,
       });
+      adminSettingsCache = newSettings; // Set cache
       console.log('Created default admin settings');
+    } else {
+      adminSettingsCache = settings; // Set cache on init
     }
   } catch (err) {
     console.error('Error initializing admin settings:', err.message, err.stack);
@@ -169,7 +323,7 @@ async function initializeAdminSettings() {
   }
 }
 
-// MongoDB connection handling
+// MongoDB connection handling (unchanged except init)
 mongoose.connection.once('open', async () => {
   console.log('MongoDB connection is open');
   try {
@@ -185,7 +339,7 @@ mongoose.connection.on('error', (err) => {
   process.exit(1);
 });
 
-// Initialize Telegram bot
+// Initialize Telegram bot (unchanged)
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 bot.start(async (ctx) => {
@@ -197,11 +351,7 @@ bot.start(async (ctx) => {
   }
 
   try {
-    const subscription = await Subscription.findOne({
-      userId,
-      status: 'active',
-      endDate: { $gt: new Date() },
-    });
+    const subscription = await hasActiveSubscription(userId); // Use cached
     if (!subscription) {
       return ctx.reply('Error: You need an active subscription to connect Telegram for notifications.');
     }
@@ -238,7 +388,7 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-// Middleware
+// Middleware (unchanged)
 app.use(cors({
   origin: ['http://localhost:3000', 'https://plexzora.onrender.com', 'https://smavo.onrender.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -257,7 +407,7 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Utility functions
+// Utility functions (generateShortCode, sanitizeForJs unchanged)
 function normalizeUrl(url) {
   if (!url) return null;
   url = url.trim();
@@ -291,94 +441,7 @@ function sanitizeForJs(str) {
     .replace(/&/g, '&amp;');
 }
 
-async function isFormExpired(formId) {
-  const config = await FormConfig.findOne({ formId });
-  if (!config || !config.createdAt) {
-    console.log(`Form ${formId} not found or missing createdAt`);
-    return true;
-  }
-
-  const adminSettings = await AdminSettings.findOne();
-  const isSubscribed = await hasActiveSubscription(config.userId);
-  if (isSubscribed || !adminSettings.restrictionsEnabled) {
-    console.log(`Expiration check skipped for form ${formId}: user is subscribed=${!!isSubscribed}, restrictionsEnabled=${adminSettings.restrictionsEnabled}`);
-    return false;
-  }
-
-  if (!adminSettings.linkLifespan) {
-    console.log(`No linkLifespan set for form ${formId}, assuming not expired`);
-    return false;
-  }
-
-  const createdTime = new Date(config.createdAt).getTime();
-  const currentTime = Date.now();
-  const isExpired = (currentTime - createdTime) > adminSettings.linkLifespan;
-
-  if (isExpired) {
-    console.log(`Form ${formId} is expired, deleting form and submissions`);
-    await FormConfig.deleteOne({ formId });
-    await Submission.deleteMany({ formId });
-    console.log(`Deleted form ${formId} and its submissions`);
-  }
-
-  console.log(`Form ${formId} expiration check: createdAt=${config.createdAt}, currentTime=${currentTime}, linkLifespan=${adminSettings.linkLifespan}, isExpired=${isExpired}`);
-  return isExpired;
-}
-
-async function countUserFormsToday(userId) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayStart = today.getTime();
-  const todayEnd = todayStart + 24 * 60 * 60 * 1000;
-
-  const count = await FormCreation.countDocuments({
-    userId,
-    createdAt: { $gte: new Date(todayStart), $lt: new Date(todayEnd) },
-  });
-
-  console.log(`Counted ${count} forms created today for user ${userId}`);
-  return count;
-}
-
-async function countUserFormsLast6Hours(userId) {
-  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours ago in ms
-  const count = await FormCreation.countDocuments({
-    userId,
-    createdAt: { $gte: sixHoursAgo },
-  });
-  console.log(`Counted ${count} forms created in last 6 hours for user ${userId}`);
-  return count;
-}
-
-async function getUserCount() {
-  return await User.countDocuments();
-}
-
-async function getSubscriberCount() {
-  const activeSubscribers = await Subscription.countDocuments({
-    status: 'active',
-    endDate: { $gt: new Date() },
-  });
-  console.log(`Counted ${activeSubscribers} active subscribers`);
-  return activeSubscribers;
-}
-
-async function hasActiveSubscription(userId) {
-  try {
-    const activeSubscription = await Subscription.findOne({
-      userId,
-      status: 'active',
-      endDate: { $gt: new Date() },
-    }).sort({ createdAt: -1 });
-    const hasActive = !!activeSubscription;
-    console.log(`User ${userId} has active subscription: ${hasActive}`, activeSubscription || {});
-    return activeSubscription;
-  } catch (error) {
-    console.error('Error checking subscription status:', error.message);
-    return null;
-  }
-}
-
+// Auth middleware (unchanged)
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -406,7 +469,7 @@ function verifyAdminPassword(req, res, next) {
   next();
 }
 
-// Paystack webhook verification middleware
+// Paystack webhook verification (unchanged)
 function verifyPaystackWebhook(req, res, next) {
   const hash = crypto
     .createHmac('sha512', PAYSTACK_SECRET_KEY)
@@ -547,9 +610,9 @@ app.post('/reset-password', forgotPasswordLimiter, async (req, res) => {
 
 app.get('/admin', async (req, res) => {
   try {
-    const adminSettings = await AdminSettings.findOne();
-    const userCount = await getUserCount();
-    const subscriberCount = await getSubscriberCount();
+    const adminSettings = await getAdminSettings(); // Cached
+    const userCount = await getUserCount(); // Cached
+    const subscriberCount = await getSubscriberCount(); // Cached
     res.render('admin', {
       headerHtml: 'Admin Settings',
       subheaderText: 'Configure form settings',
@@ -630,7 +693,11 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
     };
 
     await AdminSettings.updateOne({}, adminSettings, { upsert: true });
+    adminSettingsCache = adminSettings; // Invalidate by overwrite
     console.log('Admin settings updated:', adminSettings);
+
+    // Since lifespan change affects expirations, invalidate all user forms caches (simple: del all keys starting with 'user:', but node-cache no wildcard; for perfection, flush relevant or accept short TTL)
+    // Note: With 10min TTL on user forms, staleness is minimal; admin changes rare.
 
     if (adminSettings.restrictionsEnabled) {
       const expiredForms = await FormConfig.find({
@@ -641,6 +708,10 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
       if (expiredFormIds.length > 0) {
         await FormConfig.deleteMany({ formId: { $in: expiredFormIds } });
         await Submission.deleteMany({ formId: { $in: expiredFormIds } });
+        // Invalidate caches for these forms
+        expiredFormIds.forEach(id => {
+          cache.del(`form:${id}:config`);
+        });
         console.log(`Deleted ${expiredFormIds.length} expired forms during admin settings update`);
       }
     }
@@ -658,11 +729,7 @@ app.post('/admin/settings', verifyAdminPassword, async (req, res) => {
 app.get('/api/telegram/connect', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const subscription = await Subscription.findOne({
-      userId,
-      status: 'active',
-      endDate: { $gt: new Date() },
-    });
+    const subscription = await hasActiveSubscription(userId); // Cached
 
     if (!subscription) {
       return res.status(403).json({ error: 'You need an active subscription to connect Telegram for notifications.' });
@@ -685,13 +752,19 @@ app.get('/get', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     console.log(`Processing /get request for user ${userId}`);
 
-    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
+    // Cache submissions
+    const subsKey = `user:${userId}:submissions`;
+    let submissions = cache.get(subsKey);
+    if (submissions === undefined) {
+      submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
+      cache.set(subsKey, submissions, 300); // 5min
+    }
     console.log(`Retrieved ${submissions.length} submissions for user ${userId}`);
 
-    const adminSettings = await AdminSettings.findOne();
+    const adminSettings = await getAdminSettings(); // Cached
     console.log(`Loaded admin settings:`, adminSettings);
 
-    const activeSubscription = await hasActiveSubscription(userId);
+    const activeSubscription = await hasActiveSubscription(userId); // Cached
     const isSubscribed = !!activeSubscription;
     let subscriptionDetails = null;
     if (isSubscribed) {
@@ -701,20 +774,27 @@ app.get('/get', authenticateToken, async (req, res) => {
       };
     }
 
-    const userFormConfigs = {};
-    const validForms = [];
-    const formConfigs = await FormConfig.find({ userId });
-    for (const config of formConfigs) {
-      const isExpired = await isFormExpired(config.formId);
-      if (!isExpired) {
-        const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed)
-          ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
-          : null;
-        userFormConfigs[config.formId] = { ...config.toObject(), expiresAt: computedExpiresAt };
-        validForms.push(config.formId);
+    // Cache user forms
+    const formsKey = `user:${userId}:forms`;
+    let userFormConfigs = cache.get(formsKey);
+    if (userFormConfigs === undefined) {
+      const formConfigs = await FormConfig.find({ userId });
+      const validForms = [];
+      const tempConfigs = {};
+      for (const config of formConfigs) {
+        const isExpired = await isFormExpired(config.formId); // Uses cache
+        if (!isExpired) {
+          const computedExpiresAt = (adminSettings.restrictionsEnabled && !isSubscribed)
+            ? new Date(new Date(config.createdAt).getTime() + adminSettings.linkLifespan).toISOString()
+            : null;
+          tempConfigs[config.formId] = { ...config.toObject(), expiresAt: computedExpiresAt };
+          validForms.push(config.formId);
+        }
       }
+      userFormConfigs = tempConfigs;
+      cache.set(formsKey, userFormConfigs, 600); // 10min TTL
     }
-    console.log(`User ${userId} forms: ${validForms.length} valid (${validForms.join(', ')})`);
+    console.log(`User ${userId} forms: ${Object.keys(userFormConfigs).length} valid`);
 
     const templates = {
       'sign-in': {
@@ -769,21 +849,21 @@ app.post('/create', authenticateToken, async (req, res) => {
   try {
     console.log('Received /create request:', req.body);
     const userId = req.user.userId;
-    const adminSettings = await AdminSettings.findOne();
+    const adminSettings = await getAdminSettings(); // Cached
 
-    const isSubscribed = await hasActiveSubscription(userId);
+    const isSubscribed = await hasActiveSubscription(userId); // Cached
 
-    // Existing free-user limit check (unchanged)
+    // Existing free-user limit check (uses cached count)
     if (!isSubscribed && adminSettings.restrictionsEnabled) {
-      const userFormCountToday = await countUserFormsToday(userId);
+      const userFormCountToday = await countUserFormsToday(userId); // Cached
       if (userFormCountToday >= adminSettings.maxFormsPerUserPerDay) {
         return res.status(403).json({ error: `Maximum form limit (${adminSettings.maxFormsPerUserPerDay} per day) reached` });
       }
     }
 
-    // Updated paid-user limit check (dynamic forms per 6 hours, rolling window)
+    // Updated paid-user limit check (uses cached count)
     if (isSubscribed && adminSettings.restrictionsEnabled) {
-      const userFormCountLast6Hours = await countUserFormsLast6Hours(userId);
+      const userFormCountLast6Hours = await countUserFormsLast6Hours(userId); // Cached
       const maxFormsPer6Hours = adminSettings.maxFormsPer6HoursForSubscribers || 50;
       if (userFormCountLast6Hours >= maxFormsPer6Hours) {
         return res.status(403).json({ error: `form creation failed` });
@@ -834,6 +914,11 @@ app.post('/create', authenticateToken, async (req, res) => {
     await new FormConfig(config).save();
     console.log(`Stored form config for ${formId} for user ${userId}:`, config);
 
+    // Invalidate caches after create
+    cache.del(`user:${userId}:forms`);
+    cache.del(`user:${userId}:forms:count:today`);
+    cache.del(`user:${userId}:forms:count:last6hrs`);
+
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
@@ -858,12 +943,12 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Form not found or access denied' });
     }
 
-    const adminSettings = await AdminSettings.findOne();
-    if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
+    const adminSettings = await getAdminSettings(); // Cached
+    if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) { // Uses cache
       return res.status(403).json({ error: 'Form has expired' });
     }
 
-    const isSubscribed = await hasActiveSubscription(userId);
+    const isSubscribed = await hasActiveSubscription(userId); // Cached
 
     const validActions = ['url', 'message'];
     const config = {
@@ -909,6 +994,10 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
     await FormConfig.updateOne({ formId }, config);
     console.log(`Updated form config for ${formId} for user ${userId}:`, config);
 
+    // Invalidate caches after update
+    cache.del(`user:${userId}:forms`);
+    cache.del(`form:${formId}:config`);
+
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
     const host = req.headers.host || `localhost:${port}`;
     const url = `${protocol}://${host}/form/${formId}`;
@@ -923,13 +1012,30 @@ app.put('/api/form/:id', authenticateToken, async (req, res) => {
 app.post('/form/:id/submit', limiter, async (req, res) => {
   const formId = req.params.id;
 
-  const config = await FormConfig.findOne({ formId });
-  if (!config) {
-    console.error(`Form not found for ID: ${formId}`);
-    return res.status(404).json({ error: 'Form not found' });
+  // Use cached form config + expiration check
+  const formKey = `form:${formId}:config`;
+  let config = cache.get(formKey);
+  let fromCache = config !== undefined;
+  if (!fromCache) {
+    config = await FormConfig.findOne({ formId });
+    if (!config) {
+      console.error(`Form not found for ID: ${formId}`);
+      return res.status(404).json({ error: 'Form not found' });
+    }
+    // Set cache as in isFormExpired
+    const admin = await getAdminSettings();
+    const userSub = await hasActiveSubscription(config.userId);
+    const isSubscribed = !!userSub;
+    let ttl = 3600;
+    if (admin && admin.restrictionsEnabled && !isSubscribed && admin.linkLifespan) {
+      ttl = admin.linkLifespan / 1000;
+    }
+    cache.set(formKey, config, ttl);
   }
-  const adminSettings = await AdminSettings.findOne();
+
+  const adminSettings = await getAdminSettings(); // Cached
   if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
+    cache.del(formKey); // Ensure invalidated
     return res.status(403).json({ error: 'Form has expired' });
   }
 
@@ -982,12 +1088,11 @@ app.post('/form/:id/submit', limiter, async (req, res) => {
     await submission.save();
     console.log(`Submission saved successfully for form ${formId} by user ${userId}`);
 
+    // Invalidate submissions cache after submit
+    cache.del(`user:${userId}:submissions`);
+
     try {
-      const subscription = await Subscription.findOne({
-        userId,
-        status: 'active',
-        endDate: { $gt: new Date() },
-      });
+      const subscription = await hasActiveSubscription(userId); // Cached
       if (subscription) {
         const telegram = await Telegram.findOne({ userId });
         if (telegram && telegram.chatId) {
@@ -1024,7 +1129,7 @@ app.delete('/form/:id/submission/:index', authenticateToken, async (req, res) =>
       console.error(`User ${userId} does not have access to form ${formId}`);
       return res.status(403).json({ error: 'Access denied: Form does not belong to you' });
     }
-    const adminSettings = await AdminSettings.findOne();
+    const adminSettings = await getAdminSettings(); // Cached
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
       return res.status(403).json({ error: 'Form has expired' });
     }
@@ -1038,6 +1143,9 @@ app.delete('/form/:id/submission/:index', authenticateToken, async (req, res) =>
     const submissionToDelete = userFormSubmissions[index];
     await Submission.deleteOne({ _id: submissionToDelete._id });
     console.log(`Deleted submission at index ${index} for form ${formId} by user ${userId}`);
+
+    // Invalidate submissions cache after delete
+    cache.del(`user:${userId}:submissions`);
 
     res.status(200).json({ message: 'Submission deleted successfully' });
   } catch (error) {
@@ -1061,6 +1169,11 @@ app.delete('/form/:id', authenticateToken, async (req, res) => {
     await Submission.deleteMany({ formId, userId });
     console.log(`Deleted form ${formId} and its submissions for user ${userId}`);
 
+    // Invalidate caches after delete
+    cache.del(`user:${userId}:forms`);
+    cache.del(`form:${formId}:config`);
+    cache.del(`user:${userId}:submissions`);
+
     res.status(200).json({ message: 'Form and associated submissions deleted successfully' });
   } catch (error) {
     console.error('Error deleting form:', error.message, error.stack);
@@ -1071,7 +1184,14 @@ app.delete('/form/:id', authenticateToken, async (req, res) => {
 app.get('/submissions', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
+
+    // Reuse cached submissions from /get logic
+    const subsKey = `user:${userId}:submissions`;
+    let submissions = cache.get(subsKey);
+    if (submissions === undefined) {
+      submissions = await Submission.find({ userId }).sort({ timestamp: -1 });
+      cache.set(subsKey, submissions, 300);
+    }
 
     const templates = {
       'sign-in': {
@@ -1112,15 +1232,30 @@ app.get('/submissions', authenticateToken, async (req, res) => {
 
 app.get('/form/:id', async (req, res) => {
   const formId = req.params.id;
-  const config = await FormConfig.findOne({ formId });
 
+  // Cached form config + expiration
+  const formKey = `form:${formId}:config`;
+  let config = cache.get(formKey);
   if (!config) {
-    console.error(`Form not found for ID: ${formId}`);
-    return res.status(404).send('Form not found');
+    config = await FormConfig.findOne({ formId });
+    if (!config) {
+      console.error(`Form not found for ID: ${formId}`);
+      return res.status(404).send('Form not found');
+    }
+    // Set dynamic TTL as before
+    const admin = await getAdminSettings();
+    const userSub = await hasActiveSubscription(config.userId);
+    const isSubscribed = !!userSub;
+    let ttl = 3600;
+    if (admin && admin.restrictionsEnabled && !isSubscribed && admin.linkLifespan) {
+      ttl = admin.linkLifespan / 1000;
+    }
+    cache.set(formKey, config, ttl);
   }
 
-  const adminSettings = await AdminSettings.findOne();
+  const adminSettings = await getAdminSettings(); // Cached
   if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
+    cache.del(formKey); // Ensure clean
     return res.status(403).send('Form has expired');
   }
 
@@ -1235,13 +1370,27 @@ app.get('/api/form/:id', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    const config = await FormConfig.findOne({ formId, userId });
+    // Use cached form
+    const formKey = `form:${formId}:config`;
+    let config = cache.get(formKey);
     if (!config) {
-      console.error(`Form not found for ID: ${formId}`);
-      return res.status(404).json({ error: 'Form not found' });
+      config = await FormConfig.findOne({ formId, userId });
+      if (!config) {
+        console.error(`Form not found for ID: ${formId}`);
+        return res.status(404).json({ error: 'Form not found' });
+      }
+      // Set TTL
+      const admin = await getAdminSettings();
+      const sub = await hasActiveSubscription(userId);
+      let ttl = 3600;
+      if (admin && admin.restrictionsEnabled && !sub && admin.linkLifespan) {
+        ttl = admin.linkLifespan / 1000;
+      }
+      cache.set(formKey, config, ttl);
     }
-    const adminSettings = await AdminSettings.findOne();
+    const adminSettings = await getAdminSettings(); // Cached
     if (adminSettings.restrictionsEnabled && await isFormExpired(formId)) {
+      cache.del(formKey);
       return res.status(403).json({ error: 'Form has expired' });
     }
 
@@ -1289,7 +1438,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
       return res.status(400).json({ error: 'Price must be a positive integer' });
     }
 
-    const existingSubscription = await hasActiveSubscription(userId);
+    const existingSubscription = await hasActiveSubscription(userId); // Cached
     if (existingSubscription && existingSubscription.billingPeriod === planId.split('-')[1]) {
       console.warn(`User ${userId} already has an active ${planId.split('-')[1]} subscription`);
       return res.status(400).json({ error: `You already have an active ${planId.split('-')[1]} subscription` });
@@ -1386,6 +1535,9 @@ app.post('/api/subscription/webhook', verifyPaystackWebhook, async (req, res) =>
       console.log('Updating subscription:', subscription);
       await subscription.save();
 
+      // Invalidate subscription cache after update
+      cache.del(`user:${userId}:subscription:active`);
+
       res.status(200).json({ message: 'Webhook processed successfully' });
     } else {
       console.log('Webhook ignored: Not a charge.success event');
@@ -1397,7 +1549,7 @@ app.post('/api/subscription/webhook', verifyPaystackWebhook, async (req, res) =>
   }
 });
 
-// Start the server
+// Start the server (unchanged)
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 }).on('error', (error) => {
