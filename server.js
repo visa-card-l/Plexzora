@@ -164,25 +164,44 @@ async function getAdminSettings() {
   return adminSettingsCache;
 }
 
-// Cached hasActiveSubscription
+// Cleanup function for expired subscriptions
+async function cleanupExpiredSubscriptions(userId = null) {
+  const query = { status: 'active', endDate: { $lt: new Date() } };
+  if (userId) {
+    query.userId = userId;
+  }
+  const result = await Subscription.deleteMany(query);
+  if (result.deletedCount > 0) {
+    console.log(`Cleaned up ${result.deletedCount} expired subscription(s) ${userId ? `for user ${userId}` : 'globally'}`);
+    if (!userId) {
+      cache.del('global:subscriber:count');
+    }
+  }
+}
+
+// Cached hasActiveSubscription with expiration cleanup
 async function hasActiveSubscription(userId) {
   const key = `user:${userId}:subscription:active`;
   let sub = cache.get(key);
   if (sub !== undefined) {
     return sub;
   }
+  const now = new Date();
   sub = await Subscription.findOne({
     userId,
     status: 'active',
-    endDate: { $gt: new Date() },
+    endDate: { $gt: now },
   }).sort({ createdAt: -1 });
-  const ttl = 300; // 5min
   if (sub) {
+    const ttl = 300; // 5min
     cache.set(key, sub, ttl);
+    return sub;
   } else {
-    cache.set(key, null, ttl); // Cache null to avoid repeated queries
+    // Check for and delete expired active subscriptions for this user
+    await cleanupExpiredSubscriptions(userId);
+    cache.set(key, null, 300); // Cache null to avoid repeated queries
+    return null;
   }
-  return sub;
 }
 
 // Cached count functions
@@ -290,6 +309,8 @@ async function getSubscriberCount() {
   const key = 'global:subscriber:count';
   let count = cache.get(key);
   if (count !== undefined) return count;
+  // Cleanup expired before counting
+  await cleanupExpiredSubscriptions();
   count = await Subscription.countDocuments({
     status: 'active',
     endDate: { $gt: new Date() },
@@ -317,6 +338,8 @@ async function initializeAdminSettings() {
     } else {
       adminSettingsCache = settings; // Set cache on init
     }
+    // Initial global cleanup
+    await cleanupExpiredSubscriptions();
   } catch (err) {
     console.error('Error initializing admin settings:', err.message, err.stack);
     throw err;
@@ -1454,6 +1477,7 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
           userId,
           planId,
           billingPeriod: planId === 'premium-weekly' ? 'weekly' : 'monthly',
+          email,
         },
       },
       {
@@ -1472,19 +1496,6 @@ app.post('/api/subscription/initiate-payment', authenticateToken, async (req, re
     }
 
     const { authorization_url: authorizationUrl, reference } = response.data.data;
-
-    const subscription = new Subscription({
-      userId,
-      email,
-      planId,
-      billingPeriod: planId === 'premium-weekly' ? 'weekly' : 'monthly',
-      reference,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    });
-
-    console.log('Saving subscription:', subscription);
-    await subscription.save();
 
     res.json({
       message: 'Payment initiated successfully',
@@ -1511,32 +1522,50 @@ app.post('/api/subscription/webhook', verifyPaystackWebhook, async (req, res) =>
     const event = req.body;
     if (event.event === 'charge.success') {
       const { reference, metadata, status } = event.data;
-      const { userId, planId, billingPeriod } = metadata;
+      const { userId, planId, billingPeriod, email } = metadata;
 
       console.log(`Processing webhook: reference=${reference}, userId=${userId}, planId=${planId}, status=${status}`);
 
-      const subscription = await Subscription.findOne({ reference });
-      if (!subscription) {
-        console.error(`Webhook error: Subscription not found for reference ${reference}`);
-        return res.status(404).json({ error: 'Subscription not found' });
+      // Check if already processed
+      const existing = await Subscription.findOne({ reference });
+      if (existing && existing.status === 'active') {
+        console.log(`Webhook already processed for reference ${reference}`);
+        return res.status(200).json({ message: 'Already processed' });
       }
 
+      if (status !== 'success') {
+        console.log(`Webhook ignored: charge not successful`);
+        return res.status(200).json({ message: 'Event ignored' });
+      }
+
+      // Deactivate other active subscriptions with same billing period
       await Subscription.updateMany(
-        { userId, status: 'active', reference: { $ne: reference } },
+        { userId, status: 'active', billingPeriod },
         { status: 'inactive', endDate: new Date().toISOString() }
       );
 
-      subscription.status = 'active';
-      subscription.startDate = new Date().toISOString();
-      subscription.endDate = new Date(
-        Date.now() + (billingPeriod === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
-      ).toISOString();
+      // Create new active subscription
+      const newSubscription = new Subscription({
+        userId,
+        email,
+        planId,
+        billingPeriod,
+        reference,
+        status: 'active',
+        startDate: new Date().toISOString(),
+        endDate: new Date(
+          Date.now() + (billingPeriod === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000)
+        ).toISOString(),
+      });
 
-      console.log('Updating subscription:', subscription);
-      await subscription.save();
+      console.log('Creating new subscription:', newSubscription);
+      await newSubscription.save();
 
-      // Invalidate subscription cache after update
+      // Invalidate user subscription cache
       cache.del(`user:${userId}:subscription:active`);
+
+      // Global cleanup to ensure counts are accurate
+      await cleanupExpiredSubscriptions();
 
       res.status(200).json({ message: 'Webhook processed successfully' });
     } else {
